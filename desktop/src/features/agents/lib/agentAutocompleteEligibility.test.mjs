@@ -8,6 +8,7 @@ import {
   getAgentMentionAdmission,
   getMentionableAgentPubkeys,
   getSharedChannelIds,
+  getVisibleExternalAgents,
   isAgentDirectoryReady,
   isAgentIdentityInAllowedList,
   isAgentMentionChannelType,
@@ -190,6 +191,49 @@ test("getMentionableAgentPubkeys: keeps managed agents and shared relay agents",
   });
 
   assert.deepEqual(result, new Set([PUB_A, PUB_B, PUB_C]));
+});
+
+test("getVisibleExternalAgents: returns invocable relay agents that are not managed locally", () => {
+  const result = getVisibleExternalAgents({
+    managedAgentPubkeys: [PUB_A.toUpperCase()],
+    currentPubkey: CURRENT_PUBKEY,
+    relayAgents: [
+      {
+        pubkey: PUB_A,
+        name: "Managed",
+        respondTo: "anyone",
+        respondToAllowlist: [],
+        channelIds: ["general"],
+      },
+      {
+        pubkey: PUB_B,
+        name: "Zulu",
+        respondTo: "allowlist",
+        respondToAllowlist: [CURRENT_PUBKEY],
+        channelIds: ["other"],
+      },
+      {
+        pubkey: PUB_C,
+        name: "Alpha",
+        respondTo: "anyone",
+        respondToAllowlist: [],
+        channelIds: ["general"],
+      },
+      {
+        pubkey: PUB_D,
+        name: "Hidden",
+        respondTo: "anyone",
+        respondToAllowlist: [],
+        channelIds: ["other"],
+      },
+    ],
+    sharedChannelIds: new Set(["general"]),
+  });
+
+  assert.deepEqual(
+    result.map((agent) => agent.pubkey),
+    [PUB_C, PUB_B],
+  );
 });
 
 test("getMentionableAgentPubkeys: scopes channel composers and fails closed without context", () => {
