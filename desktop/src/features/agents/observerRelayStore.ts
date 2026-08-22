@@ -907,10 +907,7 @@ export function injectObserverEventsForE2E(
   agentPubkey: string,
   events: ObserverEvent[],
 ) {
-  const added = appendAgentEvents(agentPubkey, events);
-  if (added) {
-    notifyListeners({ agentPubkey, events: added });
-  }
+  processLiveObserverEvents(agentPubkey, events);
 }
 
 /**
