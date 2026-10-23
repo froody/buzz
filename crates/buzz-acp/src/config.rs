@@ -367,6 +367,12 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_NO_MENTION_FILTER")]
     pub no_mention_filter: bool,
 
+    /// Mentions mode: also wake on an untagged human reply in a thread this
+    /// agent started, posted in, or was mentioned in. Replies that tag
+    /// someone else, or come from NIP-OA-attested agents, still need a mention.
+    #[arg(long, env = "BUZZ_ACP_FOLLOW_THREADS")]
+    pub follow_threads: bool,
+
     #[arg(long, env = "BUZZ_ACP_CONFIG", default_value = "./buzz-acp.toml")]
     pub config: PathBuf,
 
@@ -610,6 +616,8 @@ pub struct Config {
     pub kinds_override: Option<Vec<u32>>,
     pub channels_override: Option<Vec<String>>,
     pub no_mention_filter: bool,
+    /// Mentions mode only; see [`Config::follows_threads`].
+    pub follow_threads: bool,
     pub config_path: PathBuf,
     pub context_message_limit: u32,
     /// Maximum turns per session before proactive rotation. 0 = disabled.
@@ -995,6 +1003,15 @@ pub fn propagate_legacy_env_vars() {
 }
 
 impl Config {
+    /// Whether untagged thread replies are admitted (see
+    /// `crate::thread_follow`). Needs mentions mode with its mention filter on:
+    /// the other modes already deliver everything.
+    pub fn follows_threads(&self) -> bool {
+        self.follow_threads
+            && matches!(self.subscribe_mode, SubscribeMode::Mentions)
+            && !self.no_mention_filter
+    }
+
     pub fn from_cli() -> Result<Self, ConfigError> {
         // Legacy env-var propagation is intentionally NOT done here.
         // Call `propagate_legacy_env_vars()` before the tokio runtime starts
@@ -1069,6 +1086,13 @@ impl Config {
             if args.no_mention_filter {
                 tracing::warn!("--no-mention-filter is ignored in config mode");
             }
+        }
+        if args.follow_threads
+            && (!matches!(args.subscribe, SubscribeMode::Mentions) || args.no_mention_filter)
+        {
+            tracing::warn!(
+                "--follow-threads only applies to mentions mode with the mention filter on; ignoring"
+            );
         }
 
         let agent_command = args.agent_command;
@@ -1255,6 +1279,7 @@ impl Config {
             kinds_override: args.kinds,
             channels_override: args.channels,
             no_mention_filter: args.no_mention_filter,
+            follow_threads: args.follow_threads,
             config_path: args.config,
             context_message_limit: args.context_message_limit,
             max_turns_per_session: args.max_turns_per_session,
@@ -1450,7 +1475,9 @@ pub fn resolve_channel_filters(
                 .kinds_override
                 .clone()
                 .unwrap_or_else(default_mention_kinds);
-            let require_mention = !config.no_mention_filter;
+            // Thread following needs untagged replies on the wire; the
+            // local rules re-impose the mention-or-thread gate.
+            let require_mention = !config.no_mention_filter && !config.follows_threads();
             for ch in &target_channels {
                 result.insert(
                     *ch,
@@ -1550,7 +1577,7 @@ pub fn resolve_dynamic_channel_filter(
                     .clone()
                     .unwrap_or_else(default_mention_kinds),
             ),
-            require_mention: !config.no_mention_filter,
+            require_mention: !config.no_mention_filter && !config.follows_threads(),
         }),
         SubscribeMode::All => Some(ChannelFilter {
             kinds: config.kinds_override.clone(),
@@ -1639,6 +1666,7 @@ mod tests {
             kinds_override: None,
             channels_override: None,
             no_mention_filter: false,
+            follow_threads: false,
             config_path: PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
             max_turns_per_session: 0,
@@ -1741,6 +1769,21 @@ mod tests {
 
         let f = result.get(&channels[0]).unwrap();
         assert!(!f.require_mention);
+    }
+
+    #[test]
+    fn test_mentions_mode_follow_threads_drops_relay_mention_filter() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.follow_threads = true;
+        let channels = vec![Uuid::new_v4()];
+        let result = resolve_channel_filters(&config, &channels, &[]);
+
+        let f = result.get(&channels[0]).unwrap();
+        assert!(
+            !f.require_mention,
+            "untagged thread replies must reach the local gate"
+        );
+        assert_eq!(f.kinds.as_ref().unwrap(), &default_mention_kinds());
     }
 
     #[test]

@@ -24,6 +24,7 @@ mod runtime;
 use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod setup_mode;
+mod thread_follow;
 mod transcript;
 mod turn_phase;
 mod usage;
@@ -797,10 +798,14 @@ struct NormalListenerIngress {
 }
 
 impl AuthorizedNormalListenerEvent {
+    /// `follow_threads` carries the agent key and REST client when
+    /// `--follow-threads` is on: an event no rule matched may still be an
+    /// untagged reply in one of the agent's threads.
     async fn match_subscription(
         self,
         rules: &[SubscriptionRule],
         agent_pubkey_hex: &str,
+        follow_threads: Option<(&nostr::PublicKey, &relay::RestClient)>,
     ) -> Option<NormalListenerIngress> {
         let (buzz_event, effective_author) = self.0.into_parts();
         let matched = filter::match_event(
@@ -809,11 +814,26 @@ impl AuthorizedNormalListenerEvent {
             rules,
             agent_pubkey_hex,
         )
-        .await?;
+        .await;
+        let prompt_tag = match (matched, follow_threads) {
+            (Some(matched), _) => matched.prompt_tag,
+            (None, Some((agent, rest)))
+                if thread_follow::admits_thread_reply(
+                    &buzz_event.event,
+                    buzz_event.channel_id,
+                    agent,
+                    rest,
+                )
+                .await =>
+            {
+                thread_follow::THREAD_REPLY_PROMPT_TAG.to_string()
+            }
+            (None, _) => return None,
+        };
         Some(NormalListenerIngress {
             buzz_event,
             effective_author,
-            prompt_tag: matched.prompt_tag,
+            prompt_tag,
             edit: None,
         })
     }
@@ -2898,7 +2918,8 @@ async fn run_harness(
         );
     }
 
-    let pubkey_hex = config.keys.public_key().to_hex();
+    let agent_public_key = config.keys.public_key();
+    let pubkey_hex = agent_public_key.to_hex();
 
     // Parse BUZZ_AUTH_TAG into a nostr::Tag for NIP-OA relay membership delegation.
     let relay_auth_tag: Option<nostr::Tag> = std::env::var("BUZZ_AUTH_TAG")
@@ -3749,7 +3770,13 @@ async fn run_harness(
                             };
                             let Some(ingress) =
                                 AuthorizedNormalListenerEvent(authorized_event)
-                                    .match_subscription(&rules, &pubkey_hex)
+                                    .match_subscription(
+                                        &rules,
+                                        &pubkey_hex,
+                                        config.follows_threads().then(|| {
+                                            (&agent_public_key, &ctx.rest_client)
+                                        }),
+                                    )
                                     .await
                             else {
                                 tracing::debug!("authorized event matched no rule — dropping");
@@ -10165,6 +10192,7 @@ mod build_mcp_servers_tests {
             kinds_override: None,
             channels_override: None,
             no_mention_filter: false,
+            follow_threads: false,
             config_path: std::path::PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
             max_turns_per_session: 0,
@@ -11304,6 +11332,7 @@ mod error_outcome_emission_tests {
             kinds_override: None,
             channels_override: None,
             no_mention_filter: false,
+            follow_threads: false,
             config_path: std::path::PathBuf::from("./buzz-acp.toml"),
             context_message_limit: 12,
             max_turns_per_session: 0,
