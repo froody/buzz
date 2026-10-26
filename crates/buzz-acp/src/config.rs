@@ -58,6 +58,24 @@ pub enum SubscribeMode {
     Config,
 }
 
+/// Readers of the published NIP-AF transcript.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum TranscriptVisibility {
+    /// Only the agent's owner.
+    Owner,
+    /// Every community member.
+    Community,
+}
+
+impl From<TranscriptVisibility> for buzz_core::agent_field::Visibility {
+    fn from(value: TranscriptVisibility) -> Self {
+        match value {
+            TranscriptVisibility::Owner => Self::Owner,
+            TranscriptVisibility::Community => Self::Community,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum DedupMode {
     Drop,
@@ -433,6 +451,21 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_NO_AGENT_FIELDS")]
     pub no_agent_fields: bool,
 
+    /// Publish the session transcript as the NIP-AF `transcript` field
+    /// (Blossom segments, one per turn). Off by default; needs an agent owner
+    /// and is also disabled by `--no-agent-fields`.
+    #[arg(long, env = "BUZZ_ACP_PUBLISH_TRANSCRIPT")]
+    pub publish_transcript: bool,
+
+    /// Who can read the published transcript.
+    #[arg(
+        long,
+        env = "BUZZ_ACP_TRANSCRIPT_VISIBILITY",
+        value_enum,
+        default_value = "owner"
+    )]
+    pub transcript_visibility: TranscriptVisibility,
+
     /// Disable the `<base>` platform-context section prepended to every prompt.
     /// When set, agents receive only the persona `<agent-instructions>` prompt with no Buzz orientation.
     #[arg(long, env = "BUZZ_ACP_NO_BASE_PROMPT")]
@@ -591,6 +624,9 @@ pub struct Config {
     /// Whether NIP-AF agent fields are published at turn end. On by default;
     /// disabled via `--no-agent-fields` / `BUZZ_ACP_NO_AGENT_FIELDS`.
     pub agent_fields_enabled: bool,
+    /// Visibility of the published NIP-AF transcript; `None` when transcript
+    /// publishing is off (the default, or with `--no-agent-fields`).
+    pub publish_transcript: Option<buzz_core::agent_field::Visibility>,
     /// Desired LLM model ID. Applied after every `session_new_full()`.
     pub model: Option<String>,
     /// Persisted effort level value (e.g. "high", "medium", "low"). Held as a
@@ -1226,6 +1262,8 @@ impl Config {
             typing_enabled: !args.no_typing,
             memory_enabled: args.memory && !args.no_memory,
             agent_fields_enabled: !args.no_agent_fields,
+            publish_transcript: (args.publish_transcript && !args.no_agent_fields)
+                .then(|| args.transcript_visibility.into()),
             model,
             effort_level: args.effort_level,
             session_title: args
@@ -1608,6 +1646,7 @@ mod tests {
             typing_enabled: true,
             memory_enabled: true,
             agent_fields_enabled: true,
+            publish_transcript: None,
             model: None,
             effort_level: None,
             session_title: None,

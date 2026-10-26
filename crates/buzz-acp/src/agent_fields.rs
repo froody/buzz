@@ -160,7 +160,7 @@ impl AgentFields {
 
 /// The relay rejects kinds it does not know with HTTP 400
 /// `{"error":"restricted: unknown event kind"}`.
-fn is_unknown_kind_rejection(message: &str) -> bool {
+pub(crate) fn is_unknown_kind_rejection(message: &str) -> bool {
     message.contains("HTTP 400") && message.contains("unknown event kind")
 }
 

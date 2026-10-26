@@ -578,6 +578,65 @@ impl RestClient {
             .map_err(|e| RelayError::Http(e.to_string()))
     }
 
+    /// Upload a blob via Blossom BUD-02 `PUT /upload` with a kind 24242 auth
+    /// event, and return its sha256 once the server's descriptor confirms it.
+    pub async fn upload_blob(&self, body: Vec<u8>) -> Result<String, RelayError> {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        use nostr::JsonUtil;
+        use sha2::Digest;
+
+        let sha256 = hex::encode(sha2::Sha256::digest(&body));
+        let server = buzz_core::tenant::relay_url_authority(&self.base_url);
+        if server.is_empty() {
+            return Err(RelayError::Http(format!(
+                "invalid relay URL for upload: {}",
+                self.base_url
+            )));
+        }
+        let url = format!("{}/upload", self.base_url);
+        let resp = self
+            .request_with_retry("PUT", "/upload", || {
+                let expiration = (nostr::Timestamp::now().as_secs() + 60).to_string();
+                let auth = nostr::EventBuilder::new(nostr::Kind::from(24242), "Upload blob")
+                    .tags(
+                        [
+                            nostr::Tag::parse(["t", "upload"]),
+                            nostr::Tag::parse(["x", sha256.as_str()]),
+                            nostr::Tag::parse(["expiration", expiration.as_str()]),
+                            nostr::Tag::parse(["server", server.as_str()]),
+                        ]
+                        .into_iter()
+                        .flatten(),
+                    )
+                    .sign_with_keys(&self.keys)
+                    .map(|event| format!("Nostr {}", URL_SAFE_NO_PAD.encode(event.as_json())))
+                    .unwrap_or_default();
+                let mut req = self
+                    .http
+                    .put(&url)
+                    .header("Authorization", auth)
+                    .header("Content-Type", "application/octet-stream");
+                if let Some(ref tag) = self.auth_tag_json {
+                    req = req.header("x-auth-tag", tag);
+                }
+                req.body(body.clone()).send()
+            })
+            .await?;
+        let descriptor: Value = resp
+            .json()
+            .await
+            .map_err(|e| RelayError::Http(format!("upload descriptor: {e}")))?;
+        let confirmed = descriptor.get("sha256").and_then(Value::as_str) == Some(sha256.as_str())
+            && descriptor.get("size").and_then(Value::as_u64) == Some(body.len() as u64);
+        if !confirmed {
+            return Err(RelayError::Http(format!(
+                "upload descriptor does not match the blob: {descriptor}"
+            )));
+        }
+        Ok(sha256)
+    }
+
     /// Submit a signed event via the HTTP bridge: `POST /events` with NIP-98 auth.
     ///
     /// The event must already be signed. Returns the relay response JSON.

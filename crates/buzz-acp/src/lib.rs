@@ -24,6 +24,7 @@ mod runtime;
 use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod setup_mode;
+mod transcript;
 mod turn_phase;
 mod usage;
 
@@ -2848,8 +2849,7 @@ async fn run_harness(
 
     tracing::info!("buzz-acp starting: {}", config.summary());
 
-    let observer = config
-        .relay_observer
+    let observer = (config.relay_observer || config.publish_transcript.is_some())
         .then(observer::ObserverHandle::in_process);
     if let Some(handle) = &observer {
         handle.emit(
@@ -2997,6 +2997,28 @@ async fn run_harness(
             );
         }
     }
+
+    let transcript_task = match (config.publish_transcript, &observer) {
+        (Some(visibility), Some(observer)) => {
+            match owner_cache.pubkey.as_deref().map(PublicKey::from_hex) {
+                Some(Ok(owner)) => Some(transcript::spawn(
+                    observer,
+                    relay_rest_client.clone(),
+                    config.keys.clone(),
+                    owner,
+                    visibility,
+                )),
+                _ => {
+                    tracing::warn!(
+                        "transcript publishing requested but no valid agent owner was resolved at \
+                     startup; the transcript will not be published"
+                    );
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
 
     let channel_info_map = relay
         .discover_channels()
@@ -4395,6 +4417,9 @@ async fn run_harness(
     }
 
     if let Some(handle) = relay_observer_publisher_task.take() {
+        handle.abort();
+    }
+    if let Some(handle) = transcript_task {
         handle.abort();
     }
 
@@ -10147,6 +10172,7 @@ mod build_mcp_servers_tests {
             typing_enabled: true,
             memory_enabled: false,
             agent_fields_enabled: true,
+            publish_transcript: None,
             model: None,
             effort_level: None,
             session_title: None,
@@ -11285,6 +11311,7 @@ mod error_outcome_emission_tests {
             typing_enabled: true,
             memory_enabled: false,
             agent_fields_enabled: true,
+            publish_transcript: None,
             model: None,
             effort_level: None,
             session_title: None,
