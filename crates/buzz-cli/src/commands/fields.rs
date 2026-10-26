@@ -3,8 +3,6 @@
 //! Owner resolution, event parsing and LWW conflict reporting are shared
 //! with `buzz mem` (NIP-AE), which uses the same agent↔owner key pair.
 
-use std::collections::HashMap;
-
 use buzz_core::agent_field::{
     self, conversation_key, d_tag, read_event, validate_envelope, FieldBody, FieldType, Visibility,
 };
@@ -30,38 +28,23 @@ struct Listing {
     created_at: u64,
 }
 
-/// Decode `events` and keep the newest valid event per key, dropping
-/// tombstones. `keys` is `(my_seckey, their_pubkey)` for the agent or its
-/// owner; `None` reads community fields only.
-fn current_fields(events: Vec<Event>, keys: Option<(&SecretKey, &PublicKey)>) -> Vec<Listing> {
-    let mut by_key: HashMap<String, Vec<(Event, FieldBody)>> = HashMap::new();
-    for event in events {
-        if event.verify().is_err() {
-            continue;
-        }
-        if let Ok(body) = read_event(&event, keys) {
-            by_key
-                .entry(body.key.clone())
-                .or_default()
-                .push((event, body));
-        }
-    }
-    let mut listings: Vec<Listing> = by_key
-        .into_values()
-        .filter_map(|members| {
-            let head = select_head(members.iter().map(|(e, _)| e.clone()))?;
-            let (event, body) = members.into_iter().find(|(e, _)| e.id == head.id)?;
+fn listings(
+    agent: &PublicKey,
+    events: Vec<Event>,
+    keys: Option<(&SecretKey, &PublicKey)>,
+) -> Vec<Listing> {
+    agent_field::current_fields(agent, events, keys)
+        .into_iter()
+        .filter_map(|field| {
             Some(Listing {
-                value: body.value?,
-                key: body.key,
-                field_type: body.field_type,
-                visibility: body.visibility,
-                created_at: event.created_at.as_secs(),
+                value: field.body.value?,
+                key: field.body.key,
+                field_type: field.body.field_type,
+                visibility: field.body.visibility,
+                created_at: field.created_at,
             })
         })
-        .collect();
-    listings.sort_by(|a, b| a.key.cmp(&b.key));
-    listings
+        .collect()
 }
 
 async fn query_fields(
@@ -145,7 +128,8 @@ async fn list(
             .any(|e| validate_envelope(e).is_ok_and(|env| env.owner == Some(my_hex.as_str())))
             .then_some(agent)
     };
-    let listings = current_fields(
+    let listings = listings(
+        &agent,
         events,
         their_pubkey.as_ref().map(|pk| (me.secret_key(), pk)),
     );
@@ -240,20 +224,23 @@ mod tests {
             ("cost".to_string(), "0.1".to_string()),
             ("model".to_string(), "new".to_string()),
         ];
-        let as_owner = current_fields(
+        let as_owner = listings(
+            &agent.public_key(),
             events.clone(),
             Some((owner.secret_key(), &agent.public_key())),
         );
         assert_eq!(pairs(as_owner), expected_owner);
-        let as_agent = current_fields(events.clone(), Some((agent.secret_key(), &o)));
+        let as_agent = listings(
+            &agent.public_key(),
+            events.clone(),
+            Some((agent.secret_key(), &o)),
+        );
         assert_eq!(pairs(as_agent), expected_owner);
-        let as_member = current_fields(events, None);
+        let as_member = listings(&agent.public_key(), events, None);
         assert_eq!(
             pairs(as_member),
-            vec![
-                ("focus".to_string(), "x".to_string()),
-                ("model".to_string(), "new".to_string()),
-            ]
+            vec![("model".to_string(), "new".to_string())],
+            "a removed field stays hidden from readers who cannot decrypt the tombstone"
         );
     }
 }

@@ -271,6 +271,64 @@ pub fn read_event(
     Ok(body)
 }
 
+/// A field's current value as seen by one reader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentField {
+    /// The decoded body; `value` is never `None` here.
+    pub body: FieldBody,
+    /// `created_at` of the event holding this value.
+    pub created_at: u64,
+}
+
+/// The agent's current, non-removed fields that this reader can read, sorted
+/// by key.
+///
+/// Picks the newest validly signed event per `d` address *before* decoding,
+/// so a value that was later made owner-only or removed is not shown to
+/// readers who cannot decrypt the newer event.
+pub fn current_fields(
+    agent: &PublicKey,
+    events: impl IntoIterator<Item = Event>,
+    owner_keys: Option<(&SecretKey, &PublicKey)>,
+) -> Vec<CurrentField> {
+    let mut heads: std::collections::HashMap<String, Event> = std::collections::HashMap::new();
+    for event in events {
+        if event.pubkey != *agent || event.verify().is_err() {
+            continue;
+        }
+        let Ok(envelope) = validate_envelope(&event) else {
+            continue;
+        };
+        let newer = |current: &Event| {
+            (event.created_at, std::cmp::Reverse(event.id))
+                > (current.created_at, std::cmp::Reverse(current.id))
+        };
+        if heads.get(envelope.d).is_none_or(newer) {
+            heads.insert(envelope.d.to_string(), event);
+        }
+    }
+    let mut by_key: std::collections::HashMap<String, CurrentField> =
+        std::collections::HashMap::new();
+    for event in heads.into_values() {
+        let Ok(body) = read_event(&event, owner_keys) else {
+            continue;
+        };
+        let created_at = event.created_at.as_secs();
+        if by_key
+            .get(&body.key)
+            .is_none_or(|current| created_at > current.created_at)
+        {
+            by_key.insert(body.key.clone(), CurrentField { body, created_at });
+        }
+    }
+    let mut fields: Vec<CurrentField> = by_key
+        .into_values()
+        .filter(|field| field.body.value.is_some())
+        .collect();
+    fields.sort_by(|a, b| a.body.key.cmp(&b.body.key));
+    fields
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,6 +447,44 @@ mod tests {
             read_event(&wrong_key, Some((owner.secret_key(), &agent.public_key()))),
             Err(AgentFieldError::InvalidBody(_))
         ));
+    }
+
+    #[test]
+    fn current_fields_hide_values_superseded_by_unreadable_events() {
+        let agent = Keys::generate();
+        let owner = Keys::generate();
+        let o = owner.public_key();
+        let ev = |key: &str, value: Option<&str>, visibility, at| {
+            build_event(&agent, &o, &body(key, value, visibility), at).unwrap()
+        };
+        let events = vec![
+            ev("model", Some("old"), Visibility::Community, 1),
+            ev("model", Some("new"), Visibility::Owner, 2),
+            ev("focus", Some("x"), Visibility::Community, 1),
+            ev("focus", None, Visibility::Community, 2),
+            ev("harness", Some("goose"), Visibility::Community, 1),
+            build_event(
+                &Keys::generate(),
+                &o,
+                &body("cost", Some("1"), Visibility::Community),
+                1,
+            )
+            .unwrap(),
+        ];
+        let seen = |keys| -> Vec<(String, Option<String>)> {
+            current_fields(&agent.public_key(), events.clone(), keys)
+                .into_iter()
+                .map(|f| (f.body.key, f.body.value))
+                .collect()
+        };
+        assert_eq!(seen(None), [("harness".into(), Some("goose".into()))]);
+        assert_eq!(
+            seen(Some((owner.secret_key(), &agent.public_key()))),
+            [
+                ("harness".into(), Some("goose".into())),
+                ("model".into(), Some("new".into()))
+            ]
+        );
     }
 
     #[test]
