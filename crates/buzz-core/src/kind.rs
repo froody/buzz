@@ -89,6 +89,13 @@ pub const KIND_HTTP_AUTH: u32 = 27235;
 /// Agent metadata + owner reference (replaceable, agent-authored).
 pub const KIND_AGENT_PROFILE: u32 = 10100;
 
+/// NIP-AF: Agent Field (parameterized replaceable, agent-authored).
+///
+/// One key/value field about the agent, addressed by `(pubkey_a, kind, d_tag)`
+/// where `d_tag` is an HMAC of the key. Owner-only fields carry a `p` tag and
+/// NIP-44 content; community fields are plaintext. See `docs/nips/NIP-AF.md`.
+pub const KIND_AGENT_FIELD: u32 = 30173;
+
 /// NIP-AE: Agent Engram (parameterized replaceable, agent-authored).
 ///
 /// Encrypted memory record for AI agents. Addressed by `(pubkey_a, kind, d_tag)`,
@@ -704,6 +711,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_GIFT_WRAP,
     KIND_FILE_METADATA,
     KIND_AGENT_PROFILE,
+    KIND_AGENT_FIELD,
     KIND_AGENT_ENGRAM,
     KIND_EVENT_REMINDER,
     KIND_PERSONA,
@@ -915,6 +923,7 @@ pub fn event_kind_i32(event: &nostr::Event) -> i32 {
 
 // Compile-time: new kinds are in the expected ranges.
 const _: () = assert!(is_replaceable(KIND_AGENT_PROFILE)); // 10100 ∈ 10000–19999
+const _: () = assert!(is_parameterized_replaceable(KIND_AGENT_FIELD)); // 30173 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PERSONA)); // 30175 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_TEAM)); // 30176 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_MANAGED_AGENT)); // 30177 ∈ 30000–39999
