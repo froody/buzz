@@ -12698,6 +12698,8 @@ export function maybeInstallE2eTauriMocks() {
           ),
         );
       }
+      case "read_agent_fields":
+        return [];
       case "decrypt_observer_event": {
         const event = JSON.parse(
           (payload as { eventJson: string }).eventJson,

@@ -27,6 +27,7 @@ import {
 } from "@/features/profile/lib/profileActivityFeedScope";
 import { UserProfileAgentManagementRows } from "@/features/profile/ui/UserProfileAgentManagementRows";
 import { ProtectedAgentBestieAction } from "@protected-feature-components";
+import { AgentFieldsSection } from "@/features/profile/ui/AgentFieldsSection";
 import { ProfileInstancesSection } from "@/features/profile/ui/ProfileInstancesSection";
 import {
   type ProfileField,
@@ -206,6 +207,7 @@ export function ProfileInfoTabContent({
   canDeleteAgent,
   channelIdToName,
   isArchived,
+  isBot,
   isDeleteAgentPending,
   managedAgent,
   onCreateCard,
@@ -226,6 +228,7 @@ export function ProfileInfoTabContent({
   canDeleteAgent: boolean;
   channelIdToName: Record<string, string>;
   isArchived: boolean;
+  isBot: boolean;
   isDeleteAgentPending: boolean;
   managedAgent?: ManagedAgent;
   /** Mint an agent trading card. Present only for owner-managed personas. */
@@ -306,6 +309,7 @@ export function ProfileInfoTabContent({
           <ProfileFieldRows fields={infoFields} />
         </ProfileSectionGroup>
       ) : null}
+      {isBot && pubkey ? <AgentFieldsSection pubkey={pubkey} /> : null}
       <UserProfileAgentManagementRows
         archiveActions={archiveActions}
         canArchiveAgent={showArchiveAction}

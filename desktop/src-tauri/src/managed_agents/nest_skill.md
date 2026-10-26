@@ -67,6 +67,8 @@ Output varies by command group — `--help` shows flags but not response shapes.
 | `mem hash` | SHA-256 hex string |
 | `mem set/patch/rm` | nothing to stdout; progress to stderr |
 | `mem ls` | tab-delimited (`slug\tcreated_at\tevent_id`) by default; `--json` for JSON array |
+| `agents fields set/unset` | `{event_id, accepted, message}`; values are owner-only unless `--visibility community` |
+| `agents fields list` | JSON array of `{key, value, type, visibility, created_at}` |
 | `reactions get` | `{"reactions": [{emoji, count, pubkeys}]}` — aggregated, not raw events |
 | `pack validate/inspect` | human-readable text, not JSON |
 

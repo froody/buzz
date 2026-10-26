@@ -519,6 +519,7 @@ export function ProfileSummaryView({
                 canDeleteAgent={canDeleteAgent}
                 channelIdToName={channelIdToName}
                 isArchived={isArchived}
+                isBot={isBot}
                 isDeleteAgentPending={isAgentActionPending}
                 managedAgent={managedAgent}
                 onEditAgent={handleEditAgent}

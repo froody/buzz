@@ -64,6 +64,8 @@ export const KIND_MANAGED_AGENT = 30177;
 // body) so an ordinary team edit cannot disturb catalog share state.
 export const KIND_TEAM_CATALOG = 30178;
 export const KIND_USER_STATUS = 30315;
+/** NIP-AF agent field (parameterized replaceable, one event per key). */
+export const KIND_AGENT_FIELD = 30173;
 export const KIND_AGENT_OBSERVER_FRAME = 24200;
 export const KIND_AGENT_TURN_METRIC = 44200;
 export const KIND_EVENT_REMINDER = 30300;
