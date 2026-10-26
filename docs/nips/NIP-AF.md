@@ -148,15 +148,17 @@ A `transcript` field's `value` is a JSON manifest (serialized into the string):
 ```
 
 Each segment is a [Blossom](https://github.com/hzrd149/blossom) blob holding newline-delimited
-JSON, one ACP JSON-RPC frame per line (the same frames NIP-AO carries as `acp_read`/`acp_write`
-payloads). When the manifest has a `key`, every blob it references (segments and `earlier`) is
-`nonce(24) || XChaCha20-Poly1305(key, nonce, plaintext)`. Anyone who can read the field can
-therefore decrypt the transcript, and nobody else can. A community manifest has no `key`, and its
-blobs are plaintext.
+JSON, one [NIP-AO](NIP-AO.md) observer frame (`{seq, timestamp, kind, sessionId, turnId, payload}`)
+per line. When the manifest has a `key`, every blob it references (segments and `earlier` pages) is
+`"BUZZAF1\n" || nonce(24) || XChaCha20-Poly1305(key, nonce, plaintext)`. Anyone who can read the
+field can therefore decrypt the transcript, and nobody else can. The fixed prefix keeps media servers
+that sniff magic bytes from classifying ciphertext as an image or audio file. A community manifest
+has no `key`, and its blobs are plaintext.
 
-When `segments` would push the body past its size limit, the writer moves the oldest segments into
-a new `earlier` blob, which itself has `segments` and `earlier`, and publishes the shortened
-manifest. Readers load the newest segments first and follow `earlier` only on request.
+When `segments` would push the body past its size limit, the writer moves the oldest half of the
+segments into a new `earlier` page blob (`{"v":1,"segments":[…],"earlier":…}`, never a `key`) and
+publishes the shortened manifest. Readers load the newest segments first and follow `earlier` only
+on request.
 
 Transcripts can be large and costly to store. Harnesses MUST NOT publish them unless explicitly
 enabled.

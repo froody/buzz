@@ -1145,6 +1145,7 @@ name = "buzz-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chacha20poly1305 0.10.1",
  "chrono",
  "hex",
  "hmac 0.13.0",

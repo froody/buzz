@@ -7,6 +7,8 @@
 
 /// NIP-AF: Agent Fields — per-key agent state, owner-only or community.
 pub mod agent_field;
+/// NIP-AF transcript manifests and segment encryption.
+pub mod agent_transcript;
 /// NIP-AM: Agent Turn Metric — payload type and encrypt/decrypt helpers.
 pub mod agent_turn_metric;
 /// Channel and membership enums shared across crates.
