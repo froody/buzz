@@ -1,6 +1,9 @@
 import * as React from "react";
 
-import { reportChannelBotTyping } from "@/features/agents/agentWorkingSignal";
+import {
+  type AgentWorkingPhase,
+  reportChannelBotTyping,
+} from "@/features/agents/agentWorkingSignal";
 import type { TypingIndicatorEntry } from "@/features/messages/useChannelTyping";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type {
@@ -20,16 +23,38 @@ import {
  * Key of bot typing pubkeys that may mark the *channel* as working. Only
  * channel-scoped entries (`threadHeadId === null`) count — thread-only typing
  * must not light channel-level surfaces (composer bar, sidebar, profile);
- * thread surfaces apply their own `threadHeadId` filter.
+ * thread surfaces apply their own `threadHeadId` filter. Each item is
+ * `pubkey` or `pubkey:phase` when the typing event carried a phase.
  */
 export function channelScopedBotTypingPubkeyKey(
-  entries: readonly Pick<TypingIndicatorEntry, "pubkey" | "threadHeadId">[],
+  entries: readonly Pick<
+    TypingIndicatorEntry,
+    "pubkey" | "threadHeadId" | "phase"
+  >[],
 ): string {
   return entries
     .filter((entry) => entry.threadHeadId === null)
-    .map((entry) => entry.pubkey.toLowerCase())
+    .map((entry) =>
+      entry.phase
+        ? `${entry.pubkey.toLowerCase()}:${entry.phase}`
+        : entry.pubkey.toLowerCase(),
+    )
     .sort()
     .join(",");
+}
+
+/** Inverse of channelScopedBotTypingPubkeyKey, in reportChannelBotTyping's shape. */
+export function parseBotTypingPubkeyKey(key: string) {
+  const pubkeys: string[] = [];
+  const phases: Record<string, AgentWorkingPhase> = {};
+  for (const item of key ? key.split(",") : []) {
+    const [pubkey, phase] = item.split(":");
+    pubkeys.push(pubkey);
+    if (phase) {
+      phases[pubkey] = phase as AgentWorkingPhase;
+    }
+  }
+  return { pubkeys, phases };
 }
 
 export function useChannelActivityTyping({
@@ -112,10 +137,8 @@ export function useChannelActivityTyping({
     if (!activeChannelId) {
       return;
     }
-    reportChannelBotTyping(
-      activeChannelId,
-      botTypingPubkeyKey ? botTypingPubkeyKey.split(",") : [],
-    );
+    const { pubkeys, phases } = parseBotTypingPubkeyKey(botTypingPubkeyKey);
+    reportChannelBotTyping(activeChannelId, pubkeys, phases);
     return () => {
       reportChannelBotTyping(activeChannelId, []);
     };

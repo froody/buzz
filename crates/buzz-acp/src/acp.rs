@@ -225,6 +225,8 @@ pub struct AcpClient {
     /// readable thinking unless asked; set only when the CLI the adapter runs
     /// is new enough to accept `--thinking-display`.
     claude_thinking_summaries: bool,
+    /// Phase cell of the turn in flight, written from `session/update`.
+    turn_phase: Option<crate::turn_phase::PhaseCell>,
 }
 
 /// Recursively merge `overlay` into `base`, with `overlay` winning on scalar/shape
@@ -634,6 +636,7 @@ impl AcpClient {
             standard_usage: StandardUsageTracker::default(),
             standard_adapter,
             claude_thinking_summaries,
+            turn_phase: None,
         })
     }
 
@@ -996,6 +999,11 @@ impl AcpClient {
     /// silently misroute steer requests across turns. The previous
     /// turn's receiver must have been consumed by the read loop and
     /// dropped at scope exit before the next turn dispatches.
+    /// Report this agent's phase into `cell` until the next turn installs another.
+    pub fn install_turn_phase(&mut self, cell: crate::turn_phase::PhaseCell) {
+        self.turn_phase = Some(cell);
+    }
+
     pub fn install_steer_rx(&mut self, rx: tokio::sync::mpsc::Receiver<crate::pool::SteerRequest>) {
         assert!(
             self.steer_rx.is_none(),
@@ -1827,6 +1835,12 @@ impl AcpClient {
     /// needs no run id.
     fn handle_session_update(&mut self, msg: &serde_json::Value) -> bool {
         let update = &msg["params"]["update"];
+        if let (Some(cell), Some(phase)) = (
+            &self.turn_phase,
+            crate::turn_phase::TurnPhase::from_session_update(update),
+        ) {
+            cell.set(phase);
+        }
         let update_type = update
             .get("sessionUpdate")
             .and_then(|v| v.as_str())
@@ -4126,6 +4140,22 @@ sleep 1"#,
             crate::pool::SteerAck::Err(crate::pool::SteerError::ExpectedRunIdMissing) => {}
             other => panic!("expected SteerAck::Err(ExpectedRunIdMissing), got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn session_updates_drive_the_installed_turn_phase() {
+        let mut client = spawn_script("sleep 10").await;
+        let cell = crate::turn_phase::PhaseCell::default();
+        client.install_turn_phase(cell.clone());
+        let update =
+            |kind: &str| serde_json::json!({"params": {"update": {"sessionUpdate": kind}}});
+
+        let _ = client.handle_session_update(&update("agent_thought_chunk"));
+        assert_eq!(cell.get(), Some(crate::turn_phase::TurnPhase::Thinking));
+        let _ = client.handle_session_update(&update("tool_call"));
+        assert_eq!(cell.get(), Some(crate::turn_phase::TurnPhase::Tool));
+        let _ = client.handle_session_update(&update("usage_update"));
+        assert_eq!(cell.get(), Some(crate::turn_phase::TurnPhase::Tool));
     }
 
     /// Steer with `active_run_id` set writes the JSON-RPC request and

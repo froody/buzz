@@ -30,11 +30,28 @@ import {
 
 export type AgentWorkingSource = "observer" | "typing" | "none";
 
+/** Coarse agent phase carried by bot typing indicators (`["phase", …]`). */
+export type AgentWorkingPhase = "thinking" | "tool" | "writing";
+
+const AGENT_WORKING_PHASES: readonly string[] = ["thinking", "tool", "writing"];
+
+/** Phase from a typing event's tags; absent or unknown values yield null. */
+export function parseTypingPhase(
+  tags: readonly (readonly string[])[],
+): AgentWorkingPhase | null {
+  const value = tags.find((tag) => tag[0] === "phase")?.[1];
+  return value !== undefined && AGENT_WORKING_PHASES.includes(value)
+    ? (value as AgentWorkingPhase)
+    : null;
+}
+
 export type AgentWorkingChannel = {
   channelId: string;
   /** Desktop-clock anchor for elapsed displays (turn start / first typing). */
   anchorAt: number;
   source: Exclude<AgentWorkingSource, "none">;
+  /** Latest typing-reported phase for this channel, if any. */
+  phase: AgentWorkingPhase | null;
 };
 
 export type AgentWorkingState = {
@@ -43,6 +60,8 @@ export type AgentWorkingState = {
   source: AgentWorkingSource;
   /** Every channel the agent is working in (unscoped), observer-primary. */
   channels: AgentWorkingChannel[];
+  /** Phase of the most recently started working channel in scope. */
+  phase: AgentWorkingPhase | null;
 };
 
 export type WorkingChannelSummary = ActiveChannelTurnSummary & {
@@ -53,13 +72,15 @@ const IDLE_STATE: AgentWorkingState = {
   working: false,
   source: "none",
   channels: [],
+  phase: null,
 };
 
 // ── Typing registry (fallback input) ────────────────────────────────────────
-// channelId → (normalized agent pubkey → first-seen ms). Fed by
+// channelId → (normalized agent pubkey → first-seen ms + phase). Fed by
 // reportChannelBotTyping from the channel typing hooks; entries follow the
 // typing TTL because the hooks re-report whenever their entries change.
-const typingByChannel = new Map<string, Map<string, number>>();
+type TypingRecord = { since: number; phase: AgentWorkingPhase | null };
+const typingByChannel = new Map<string, Map<string, TypingRecord>>();
 
 const listeners = new Set<() => void>();
 let unsubscribeTurns: (() => void) | null = null;
@@ -100,24 +121,31 @@ export function subscribeAgentWorkingSignal(listener: () => void) {
 
 /**
  * Mirror the current bot typing pubkeys for a channel into the signal.
- * Call with the full current set (empty array clears the channel). First-seen
- * timestamps are preserved across re-reports so elapsed anchors stay stable.
+ * Call with the full current set (empty array clears the channel) and the
+ * phase of each pubkey that reported one. First-seen timestamps are preserved
+ * across re-reports so elapsed anchors stay stable.
  */
 export function reportChannelBotTyping(
   channelId: string,
   pubkeys: readonly string[],
+  phases: Readonly<Record<string, AgentWorkingPhase>> = {},
 ) {
   const current = typingByChannel.get(channelId);
-  const next = new Map<string, number>();
+  const next = new Map<string, TypingRecord>();
   const now = Date.now();
   for (const pubkey of pubkeys) {
     const key = normalizePubkey(pubkey);
-    next.set(key, current?.get(key) ?? now);
+    next.set(key, {
+      since: current?.get(key)?.since ?? now,
+      phase: phases[pubkey] ?? null,
+    });
   }
 
   const unchanged =
     (current?.size ?? 0) === next.size &&
-    [...next.keys()].every((key) => current?.has(key));
+    [...next].every(
+      ([key, record]) => current?.get(key)?.phase === record.phase,
+    );
   if (unchanged) {
     return;
   }
@@ -141,6 +169,7 @@ function computeAgentWorkingState(
     channelId: turn.channelId,
     anchorAt: turn.anchorAt,
     source: "observer" as const,
+    phase: typingByChannel.get(turn.channelId)?.get(key)?.phase ?? null,
   }));
   const observerChannelIds = new Set(turns.map((turn) => turn.channelId));
 
@@ -148,12 +177,13 @@ function computeAgentWorkingState(
     if (observerChannelIds.has(typingChannelId)) {
       continue;
     }
-    const since = entries.get(key);
-    if (since !== undefined) {
+    const record = entries.get(key);
+    if (record) {
       channels.push({
         channelId: typingChannelId,
-        anchorAt: since,
+        anchorAt: record.since,
         source: "typing",
+        phase: record.phase,
       });
     }
   }
@@ -176,7 +206,19 @@ function computeAgentWorkingState(
       ? "typing"
       : "none";
 
-  return { working: source !== "none", source, channels };
+  let latest: AgentWorkingChannel | null = null;
+  for (const channel of scoped) {
+    if (!latest || channel.anchorAt > latest.anchorAt) {
+      latest = channel;
+    }
+  }
+
+  return {
+    working: source !== "none",
+    source,
+    channels,
+    phase: latest?.phase ?? null,
+  };
 }
 
 /**
@@ -239,7 +281,7 @@ export function getWorkingChannels(): WorkingChannelSummary[] {
     }
 
     let anchorAt = Number.POSITIVE_INFINITY;
-    for (const since of entries.values()) {
+    for (const { since } of entries.values()) {
       if (since < anchorAt) {
         anchorAt = since;
       }

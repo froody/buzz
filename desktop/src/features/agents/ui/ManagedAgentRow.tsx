@@ -6,7 +6,10 @@ import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import { Badge } from "@/shared/ui/badge";
 import { AgentStatusBadge } from "@/features/agents/ui/AgentStatusBadge";
-import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
+import {
+  type AgentWorkingPhase,
+  useAgentWorking,
+} from "@/features/agents/agentWorkingSignal";
 import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
 import { useNow } from "@/shared/lib/useNow";
@@ -59,7 +62,7 @@ export function ManagedAgentRow({
     ? (personaLabelsById[agent.personaId] ?? null)
     : null;
   const presenceStatus = presenceLookup[agent.pubkey.trim().toLowerCase()];
-  const activeTurns = useAgentWorking(agent.pubkey).channels;
+  const { channels: activeTurns, phase } = useAgentWorking(agent.pubkey);
   const activeWorkingChannels = React.useMemo(
     () =>
       activeTurns
@@ -122,6 +125,7 @@ export function ManagedAgentRow({
               <StatusBlock
                 friendlyError={friendlyError}
                 isWorking={isWorking}
+                phase={phase}
                 presenceLoaded={presenceLoaded}
                 presenceStatus={presenceStatus}
                 processDetail={processDetail}
@@ -145,6 +149,7 @@ export function ManagedAgentRow({
               <StatusBlock
                 friendlyError={friendlyError}
                 isWorking={isWorking}
+                phase={phase}
                 presenceLoaded={presenceLoaded}
                 presenceStatus={presenceStatus}
                 processDetail={processDetail}
@@ -356,6 +361,7 @@ function WorkingBadge({
 function StatusBlock({
   friendlyError,
   isWorking,
+  phase,
   presenceLoaded,
   presenceStatus,
   processDetail,
@@ -363,6 +369,7 @@ function StatusBlock({
 }: {
   friendlyError: ReturnType<typeof friendlyAgentLastError>;
   isWorking: boolean;
+  phase: AgentWorkingPhase | null;
   presenceLoaded: boolean;
   presenceStatus: PresenceStatus | undefined;
   processDetail: string;
@@ -373,6 +380,7 @@ function StatusBlock({
       <SubsectionLabel className="lg:hidden">Status</SubsectionLabel>
       <AgentStatusBadge
         isWorking={isWorking}
+        phase={phase}
         presenceLoaded={presenceLoaded}
         presenceStatus={presenceStatus}
         status={status}

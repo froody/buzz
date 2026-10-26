@@ -1019,10 +1019,17 @@ impl HarnessRelay {
         channel_id: Uuid,
         root_event_id: Option<&str>,
         parent_event_id: Option<&str>,
+        phase: Option<crate::turn_phase::TurnPhase>,
     ) -> Result<Event, RelayError> {
         let h_tag = Tag::parse(["h", &channel_id.to_string()])
             .map_err(|e| RelayError::AuthFailed(e.to_string()))?;
         let mut tags = vec![h_tag];
+        if let Some(phase) = phase {
+            tags.push(
+                Tag::parse(["phase", phase.as_tag_value()])
+                    .map_err(|e| RelayError::AuthFailed(e.to_string()))?,
+            );
+        }
         if let Some(parent) = parent_event_id {
             if let Some(root) = root_event_id {
                 if root != parent {

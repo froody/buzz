@@ -4,6 +4,10 @@ import {
   getChannelIdFromTags,
   getThreadReference,
 } from "@/features/messages/lib/threading";
+import {
+  type AgentWorkingPhase,
+  parseTypingPhase,
+} from "@/features/agents/agentWorkingSignal";
 import { relayClient } from "@/shared/api/relayClient";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import {
@@ -16,6 +20,7 @@ import { resolveEventAuthorPubkey } from "@/shared/lib/authors";
 export type TypingIndicatorEntry = {
   pubkey: string;
   threadHeadId: string | null;
+  phase: AgentWorkingPhase | null;
 };
 
 type TypingEntry = {
@@ -23,6 +28,7 @@ type TypingEntry = {
   firstSeenAt: number;
   pubkey: string;
   threadHeadId: string | null;
+  phase: AgentWorkingPhase | null;
 };
 type TypingState = Record<string, TypingEntry>;
 
@@ -125,6 +131,7 @@ export function useChannelTyping(
           firstSeenAt: existing?.firstSeenAt ?? now,
           pubkey: typingPubkey,
           threadHeadId,
+          phase: parseTypingPhase(event.tags),
         },
       };
     });
@@ -234,7 +241,11 @@ export function useChannelTyping(
     () =>
       Object.values(typingByPubkey)
         .sort((left, right) => left.firstSeenAt - right.firstSeenAt)
-        .map(({ pubkey, threadHeadId }) => ({ pubkey, threadHeadId })),
+        .map(({ pubkey, threadHeadId, phase }) => ({
+          pubkey,
+          threadHeadId,
+          phase,
+        })),
     [typingByPubkey],
   );
 }

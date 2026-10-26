@@ -23,6 +23,7 @@ mod runtime;
 use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod setup_mode;
+mod turn_phase;
 mod usage;
 
 pub use usage::TurnUsage;
@@ -3102,7 +3103,7 @@ async fn run_harness(
     } else {
         None
     };
-    let mut typing_channels: HashMap<scope::SessionScope, ThreadTags> = HashMap::new();
+    let mut typing_channels: HashMap<scope::SessionScope, TypingTarget> = HashMap::new();
     let mut presence_task: Option<tokio::task::JoinHandle<()>> = None;
 
     // Independent of pool readiness: a never-mentioned lazy agent must still
@@ -3299,14 +3300,14 @@ async fn run_harness(
             // called on relay events or pool results, neither of which
             // arrive when the channel is silent.
             if queue.has_flushable_work() {
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
         }
@@ -3773,10 +3774,10 @@ async fn run_harness(
                                 &steer_ack_tx,
                             );
                             if pool_ready {
-                                for (scope, thread_tags) in
+                                for (scope, target) in
                                     dispatch_pending(&mut pool, &mut queue, &ctx, &mut last_activity, observer.as_ref())
                                 {
-                                    typing_channels.insert(scope, thread_tags);
+                                    typing_channels.insert(scope, target);
                                 }
                             }
                         }
@@ -3873,10 +3874,10 @@ async fn run_harness(
                         tracing::debug!("heartbeat_skipped_pool_not_ready");
                     } else if queue.has_flushable_work() {
                         tracing::debug!("heartbeat_skipped_events");
-                        for (scope, thread_tags) in
+                        for (scope, target) in
                             dispatch_pending(&mut pool, &mut queue, &ctx, &mut last_activity, observer.as_ref())
                         {
-                            typing_channels.insert(scope, thread_tags);
+                            typing_channels.insert(scope, target);
                         }
                     } else if pool.any_idle() {
                         dispatch_heartbeat(&mut pool, &ctx, &mut heartbeat_in_flight);
@@ -3915,12 +3916,13 @@ async fn run_harness(
                     // Use try_publish (non-blocking) for typing indicators —
                     // they're ephemeral and must not block the main loop during
                     // relay reconnection (#35).
-                    for (scope, thread_tags) in &typing_channels {
+                    for (scope, target) in &typing_channels {
                         let ch = scope.channel_id();
                         if let Ok(event) = relay.build_typing_event(
                             ch,
-                            thread_tags.root_event_id.as_deref(),
-                            thread_tags.parent_event_id.as_deref(),
+                            target.thread_tags.root_event_id.as_deref(),
+                            target.thread_tags.parent_event_id.as_deref(),
+                            target.phase.get(),
                         ) {
                             if let Err(e) = relay.try_publish_event(event) {
                                 tracing::debug!("typing indicator dropped for {ch}: {e}");
@@ -3969,14 +3971,14 @@ async fn run_harness(
                     recovery_wake::RecoveryWake::Maintenance => continue,
                     recovery_wake::RecoveryWake::Retry => {}
                 }
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
             Some(PoolEvent::Result(result)) => {
@@ -4018,14 +4020,14 @@ async fn run_harness(
                 {
                     break;
                 }
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
             Some(PoolEvent::Panic(join_error)) => {
@@ -4047,14 +4049,14 @@ async fn run_harness(
                     tracing::error!("all agents dead — exiting");
                     break;
                 }
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
             Some(PoolEvent::SteerAck(SteerAckEvent {
@@ -4205,14 +4207,14 @@ async fn run_harness(
                 // tear down the in-flight task; on its completion the
                 // queue drains. We still try here in case the in-flight
                 // task has already returned.
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
             Some(PoolEvent::Wake(attempt, result)) => {
@@ -4237,14 +4239,14 @@ async fn run_harness(
                             "ready",
                             None,
                         );
-                        for (scope, thread_tags) in dispatch_pending(
+                        for (scope, target) in dispatch_pending(
                             &mut pool,
                             &mut queue,
                             &ctx,
                             &mut last_activity,
                             observer.as_ref(),
                         ) {
-                            typing_channels.insert(scope, thread_tags);
+                            typing_channels.insert(scope, target);
                         }
                     }
                     Err(error) => {
@@ -4265,14 +4267,14 @@ async fn run_harness(
                 // relay/timer source is quiet. The deadline is derived from
                 // the pool's first-held stamp, so this dispatch observes
                 // `ForkAfterHold` and claims an idle worker immediately.
-                for (scope, thread_tags) in dispatch_pending(
+                for (scope, target) in dispatch_pending(
                     &mut pool,
                     &mut queue,
                     &ctx,
                     &mut last_activity,
                     observer.as_ref(),
                 ) {
-                    typing_channels.insert(scope, thread_tags);
+                    typing_channels.insert(scope, target);
                 }
             }
             None => {} // relay/heartbeat/shutdown branches handled inline above
@@ -4938,6 +4940,13 @@ mod try_native_steer_fallback_log_tests {
 
 // ── dispatch_pending ──────────────────────────────────────────────────────────
 
+/// Where a typing indicator for one in-flight turn is published, and the
+/// turn's live phase for its `phase` tag.
+struct TypingTarget {
+    thread_tags: ThreadTags,
+    phase: turn_phase::PhaseCell,
+}
+
 /// Flush queued work to available agents.
 fn dispatch_pending(
     pool: &mut AgentPool,
@@ -4945,7 +4954,7 @@ fn dispatch_pending(
     ctx: &Arc<PromptContext>,
     last_activity: &mut tokio::time::Instant,
     observer: Option<&observer::ObserverHandle>,
-) -> Vec<(scope::SessionScope, ThreadTags)> {
+) -> Vec<(scope::SessionScope, TypingTarget)> {
     // Keyed by the exact session scope, not the channel: two threads dispatching
     // concurrently in one channel get distinct typing entries so completing one
     // never clears the other's indicator.
@@ -5009,11 +5018,14 @@ fn dispatch_pending(
             } => Some((held_for, owner_index)),
             pool::HoldDecision::Dispatch => None,
         };
-        let typing_scope = batch
-            .events
-            .last()
-            .map(queue::BatchEvent::routing_thread_tags)
-            .unwrap_or_default();
+        let typing_target = TypingTarget {
+            thread_tags: batch
+                .events
+                .last()
+                .map(queue::BatchEvent::routing_thread_tags)
+                .unwrap_or_default(),
+            phase: turn_phase::PhaseCell::default(),
+        };
         // Scope-level affinity: reuse the worker that already holds THIS
         // thread's provider session so a temporarily busy worker cannot cause
         // another to open a duplicate session for the same thread.
@@ -5076,6 +5088,7 @@ fn dispatch_pending(
         // `ExpectedRunIdMissing` (→ cancel+merge) when it has neither.
         let (tx, rx) = tokio::sync::mpsc::channel::<pool::SteerRequest>(1);
         agent.acp.install_steer_rx(rx);
+        agent.acp.install_turn_phase(typing_target.phase.clone());
         let steer_tx = Some(tx);
 
         // Prompt text is now built inside run_prompt_task (needs async for
@@ -5122,7 +5135,7 @@ fn dispatch_pending(
                 successful_steer_deliveries: HashSet::new(),
             },
         );
-        dispatched_channels.push((scope, typing_scope));
+        dispatched_channels.push((scope, typing_target));
         *last_activity = tokio::time::Instant::now();
     }
     // Release held batches back to the queue (owner busy). They were flushed
@@ -5658,7 +5671,7 @@ fn recover_panicked_agent(
     join_error: tokio::task::JoinError,
     heartbeat_in_flight: &mut bool,
     removed_channels: &HashSet<Uuid>,
-    typing_channels: &mut HashMap<scope::SessionScope, ThreadTags>,
+    typing_channels: &mut HashMap<scope::SessionScope, TypingTarget>,
     crash_history: &mut [SlotCircuit],
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
@@ -5771,7 +5784,7 @@ fn drain_ready_join_results(
     config: &Config,
     heartbeat_in_flight: &mut bool,
     removed_channels: &HashSet<Uuid>,
-    typing_channels: &mut HashMap<scope::SessionScope, ThreadTags>,
+    typing_channels: &mut HashMap<scope::SessionScope, TypingTarget>,
     crash_history: &mut [SlotCircuit],
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,

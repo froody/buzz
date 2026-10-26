@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import type { AgentWorkingPhase } from "@/features/agents/agentWorkingSignal";
 import { Badge } from "@/shared/ui/badge";
 import type { ManagedAgent, PresenceStatus } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
@@ -7,9 +8,16 @@ import { cn } from "@/shared/lib/cn";
 /** Grace period after mount before treating "running + no presence" as "Starting…" */
 const PRESENCE_GRACE_MS = 15_000;
 
+const PHASE_LABELS: Record<AgentWorkingPhase, string> = {
+  thinking: "Thinking",
+  tool: "Using a tool",
+  writing: "Writing",
+};
+
 export function AgentStatusBadge({
   className,
   isWorking,
+  phase,
   presenceLoaded,
   presenceStatus,
   sentenceCase = false,
@@ -17,6 +25,7 @@ export function AgentStatusBadge({
 }: {
   className?: string;
   isWorking?: boolean;
+  phase?: AgentWorkingPhase | null;
   presenceLoaded: boolean;
   presenceStatus: PresenceStatus | undefined;
   sentenceCase?: boolean;
@@ -45,7 +54,9 @@ export function AgentStatusBadge({
         : "secondary";
 
   const rawLabel = isWorking
-    ? "Working"
+    ? phase
+      ? PHASE_LABELS[phase]
+      : "Working"
     : isStarting
       ? "Starting\u2026"
       : status.replace(/_/g, " ");

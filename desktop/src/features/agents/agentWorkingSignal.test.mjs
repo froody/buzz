@@ -5,6 +5,7 @@ import {
   getAgentWorkingState,
   getWorkingAgentPubkeysForChannel,
   getWorkingChannels,
+  parseTypingPhase,
   reportChannelBotTyping,
   resetAgentWorkingSignal,
   subscribeAgentWorkingSignal,
@@ -13,6 +14,10 @@ import {
   resetActiveAgentTurnsStore,
   syncAgentTurnsFromEvents,
 } from "./activeAgentTurnsStore.ts";
+import {
+  channelScopedBotTypingPubkeyKey,
+  parseBotTypingPubkeyKey,
+} from "../channels/ui/useChannelActivityTyping.ts";
 
 const AGENT =
   "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234";
@@ -113,6 +118,71 @@ describe("getAgentWorkingState", () => {
     reportChannelBotTyping("chan-1", [AGENT, AGENT_2]);
     const again = getAgentWorkingState(AGENT).channels[0].anchorAt;
     assert.equal(again, first);
+  });
+});
+
+describe("typing phase", () => {
+  // Mirrors useChannelActivityTyping: typing tags → entries → key → report.
+  function reportTyping(channelId, typers) {
+    const key = channelScopedBotTypingPubkeyKey(
+      typers.map(([pubkey, tags]) => ({
+        pubkey,
+        threadHeadId: null,
+        phase: parseTypingPhase(tags),
+      })),
+    );
+    const { pubkeys, phases } = parseBotTypingPubkeyKey(key);
+    reportChannelBotTyping(channelId, pubkeys, phases);
+  }
+
+  it("follows the latest typing phase until typing clears", () => {
+    let notified = 0;
+    const unsubscribe = subscribeAgentWorkingSignal(() => {
+      notified += 1;
+    });
+    try {
+      reportTyping("chan-1", [[AGENT, [["h", "chan-1"]]]]);
+      assert.equal(getAgentWorkingState(AGENT, "chan-1").phase, null);
+
+      reportTyping("chan-1", [[AGENT, [["phase", "thinking"]]]]);
+      const thinking = getAgentWorkingState(AGENT, "chan-1");
+      assert.equal(thinking.phase, "thinking");
+      assert.equal(thinking.channels[0].phase, "thinking");
+      assert.equal(getAgentWorkingState(AGENT, "chan-1"), thinking);
+
+      const before = notified;
+      reportTyping("chan-1", [[AGENT, [["phase", "thinking"]]]]);
+      assert.equal(notified, before);
+
+      reportTyping("chan-1", [[AGENT, [["phase", "tool"]]]]);
+      assert.equal(notified, before + 1);
+      assert.equal(getAgentWorkingState(AGENT, "chan-1").phase, "tool");
+
+      reportTyping("chan-1", [[AGENT, [["phase", "dancing"]]]]);
+      const unknown = getAgentWorkingState(AGENT, "chan-1");
+      assert.equal(unknown.working, true);
+      assert.equal(unknown.phase, null);
+
+      reportTyping("chan-1", [[AGENT, [["phase", "writing"]]]]);
+      assert.equal(getAgentWorkingState(AGENT).phase, "writing");
+
+      reportTyping("chan-1", []);
+      const cleared = getAgentWorkingState(AGENT, "chan-1");
+      assert.equal(cleared.working, false);
+      assert.equal(cleared.phase, null);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("lends the typing phase to an observer-backed channel", () => {
+    startTurn(AGENT, "chan-1");
+    assert.equal(getAgentWorkingState(AGENT, "chan-1").phase, null);
+    reportTyping("chan-1", [[AGENT, [["phase", "tool"]]]]);
+    const state = getAgentWorkingState(AGENT, "chan-1");
+    assert.equal(state.source, "observer");
+    assert.equal(state.phase, "tool");
+    assert.equal(getAgentWorkingState(AGENT, "chan-2").phase, null);
   });
 });
 
