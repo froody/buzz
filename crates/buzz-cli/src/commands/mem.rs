@@ -30,7 +30,10 @@ use crate::error::CliError;
 
 /// Resolve the agent's owner pubkey: explicit `--owner` flag wins, otherwise
 /// fall back to the NIP-OA `auth_tag` (which carries owner pubkey in slot 1).
-fn resolve_owner(client: &BuzzClient, owner_flag: Option<&str>) -> Result<PublicKey, CliError> {
+pub(crate) fn resolve_owner(
+    client: &BuzzClient,
+    owner_flag: Option<&str>,
+) -> Result<PublicKey, CliError> {
     if let Some(s) = owner_flag {
         return PublicKey::from_hex(s)
             .map_err(|e| CliError::Usage(format!("--owner must be a 64-hex pubkey: {e}")));
@@ -78,7 +81,7 @@ fn resolve_reader(
     Ok((agent, owner, owner))
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -89,8 +92,12 @@ fn now_secs() -> u64 {
 /// authoritative. The relay returns `{accepted, message}` where the
 /// `message` field starts with `"duplicate:"` when the write was rejected
 /// as already-superseded by a later head (NIP-33 LWW). In that case we
-/// surface a `Conflict` so callers don't lie about success.
-async fn submit_engram(client: &BuzzClient, event: nostr::Event) -> Result<(), CliError> {
+/// surface a `Conflict` so callers don't lie about success. Returns the raw
+/// relay response.
+pub(crate) async fn submit_engram(
+    client: &BuzzClient,
+    event: nostr::Event,
+) -> Result<String, CliError> {
     let raw = client.submit_event(event).await?;
     let parsed: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| CliError::Other(format!("relay response is not JSON: {e} ({raw})")))?;
@@ -107,11 +114,11 @@ async fn submit_engram(client: &BuzzClient, event: nostr::Event) -> Result<(), C
             "relay reported event as duplicate / dominated by a newer head".into(),
         ));
     }
-    Ok(())
+    Ok(raw)
 }
 
 /// Parse a relay-response JSON array of events.
-fn parse_events(json: &str) -> Result<Vec<nostr::Event>, CliError> {
+pub(crate) fn parse_events(json: &str) -> Result<Vec<nostr::Event>, CliError> {
     let value: serde_json::Value = serde_json::from_str(json)
         .map_err(|e| CliError::Other(format!("relay returned invalid JSON: {e}")))?;
     let arr = value

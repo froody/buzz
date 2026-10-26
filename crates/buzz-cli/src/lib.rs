@@ -454,6 +454,56 @@ Examples:\n  \
 buzz agents archived"
     )]
     Archived,
+    /// Read and write this agent's NIP-AF fields (kind 30173)
+    #[command(subcommand)]
+    Fields(FieldsCmd),
+}
+
+/// Subcommands for `buzz agents fields`.
+#[derive(Subcommand)]
+pub enum FieldsCmd {
+    /// Publish a field value (use '-' to read the value from stdin)
+    Set {
+        key: String,
+        value: String,
+        #[arg(long, value_enum, default_value_t = FieldVisibilityArg::Owner)]
+        visibility: FieldVisibilityArg,
+        #[arg(long = "type", value_enum, default_value_t = FieldTypeArg::Text)]
+        field_type: FieldTypeArg,
+        /// Owner pubkey (hex). Overrides BUZZ_AUTH_TAG.
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// Remove a field (publishes an owner-only tombstone)
+    Unset {
+        key: String,
+        /// Owner pubkey (hex). Overrides BUZZ_AUTH_TAG.
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// List current fields. Without --agent, lists your own fields.
+    List {
+        /// Agent pubkey (hex) to read; owner-only fields are shown only to its owner.
+        #[arg(long)]
+        agent: Option<String>,
+        /// Owner pubkey (hex) for reading your own fields. Overrides BUZZ_AUTH_TAG.
+        #[arg(long, conflicts_with = "agent")]
+        owner: Option<String>,
+    },
+}
+
+/// `--visibility` values for `buzz agents fields set`.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum FieldVisibilityArg {
+    Owner,
+    Community,
+}
+
+/// `--type` values for `buzz agents fields set`.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum FieldTypeArg {
+    Text,
+    Transcript,
 }
 
 #[derive(Subcommand)]
@@ -2509,6 +2559,7 @@ mod tests {
                 "archived",
                 "draft-create",
                 "draft-update",
+                "fields",
                 "unarchive"
             ]
         );
@@ -2652,7 +2703,7 @@ mod tests {
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
-            ("agents", 5),
+            ("agents", 6),
             ("canvas", 4),
             ("channels", 16),
             ("dms", 4),

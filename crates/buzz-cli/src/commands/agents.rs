@@ -164,6 +164,7 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
         }
 
         AgentsCmd::Archived => cmd_archived(client).await,
+        AgentsCmd::Fields(cmd) => crate::commands::fields::dispatch(cmd, client).await,
     }
 }
 

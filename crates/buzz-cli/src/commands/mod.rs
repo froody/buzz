@@ -5,6 +5,7 @@ pub mod dms;
 pub mod emoji;
 pub(crate) mod event_output;
 pub mod feed;
+pub mod fields;
 pub mod gifs;
 pub mod issues;
 pub mod mem;
