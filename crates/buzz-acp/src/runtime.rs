@@ -5,7 +5,7 @@ use crate::{
     resolve_agent_owner, PromptContext,
 };
 use anyhow::Result;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use uuid::Uuid;
 
 pub(crate) enum SessionMode {
@@ -82,6 +82,10 @@ fn make_prompt_context(
 ) -> Result<PromptContext> {
     let base_prompt_content = config.base_prompt_content.as_ref();
     let cwd = current_working_directory()?;
+    let agent_owner_pubkey = resolve_agent_owner(config)
+        .as_deref()
+        .and_then(|hex| nostr::PublicKey::from_hex(hex).ok());
+    let harness_name = crate::config::normalize_agent_command_identity(&config.agent_command);
     Ok(PromptContext {
         mcp_servers: build_mcp_servers(config),
         initial_message: config.initial_message.clone(),
@@ -115,11 +119,16 @@ fn make_prompt_context(
         max_turns_per_session: config.max_turns_per_session,
         permission_mode: config.permission_mode,
         agent_keys: config.keys.clone(),
-        agent_owner_pubkey: resolve_agent_owner(config)
-            .as_deref()
-            .and_then(|hex| nostr::PublicKey::from_hex(hex).ok()),
+        agent_owner_pubkey,
         memory_enabled: config.memory_enabled,
-        harness_name: crate::config::normalize_agent_command_identity(&config.agent_command),
+        harness_name: harness_name.clone(),
+        agent_fields: (config.agent_fields_enabled && agent_owner_pubkey.is_some()).then(|| {
+            Arc::new(crate::agent_fields::AgentFields::new(
+                harness_name,
+                config.model.clone(),
+                config.effort_level.clone(),
+            ))
+        }),
         relay_url: config.relay_url.clone(),
     })
 }

@@ -5,6 +5,7 @@ mod git;
 mod git_runtime_tests;
 
 mod acp;
+mod agent_fields;
 mod config;
 mod edit_routing;
 mod engram_fetch;
@@ -10145,6 +10146,7 @@ mod build_mcp_servers_tests {
             presence_enabled: true,
             typing_enabled: true,
             memory_enabled: false,
+            agent_fields_enabled: true,
             model: None,
             effort_level: None,
             session_title: None,
@@ -11282,6 +11284,7 @@ mod error_outcome_emission_tests {
             presence_enabled: true,
             typing_enabled: true,
             memory_enabled: false,
+            agent_fields_enabled: true,
             model: None,
             effort_level: None,
             session_title: None,

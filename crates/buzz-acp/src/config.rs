@@ -428,6 +428,11 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_NO_MEMORY", conflicts_with = "memory")]
     pub no_memory: bool,
 
+    /// Disable publishing NIP-AF agent fields (harness, model, thinking,
+    /// context, cost) to the agent's owner at turn end.
+    #[arg(long, env = "BUZZ_ACP_NO_AGENT_FIELDS")]
+    pub no_agent_fields: bool,
+
     /// Disable the `<base>` platform-context section prepended to every prompt.
     /// When set, agents receive only the persona `<agent-instructions>` prompt with no Buzz orientation.
     #[arg(long, env = "BUZZ_ACP_NO_BASE_PROMPT")]
@@ -583,6 +588,9 @@ pub struct Config {
     /// `<core-memory>` section. On by default; disabled via the
     /// `--no-memory` / `BUZZ_ACP_NO_MEMORY` opt-out.
     pub memory_enabled: bool,
+    /// Whether NIP-AF agent fields are published at turn end. On by default;
+    /// disabled via `--no-agent-fields` / `BUZZ_ACP_NO_AGENT_FIELDS`.
+    pub agent_fields_enabled: bool,
     /// Desired LLM model ID. Applied after every `session_new_full()`.
     pub model: Option<String>,
     /// Persisted effort level value (e.g. "high", "medium", "low"). Held as a
@@ -1217,6 +1225,7 @@ impl Config {
             presence_enabled: !args.no_presence,
             typing_enabled: !args.no_typing,
             memory_enabled: args.memory && !args.no_memory,
+            agent_fields_enabled: !args.no_agent_fields,
             model,
             effort_level: args.effort_level,
             session_title: args
@@ -1598,6 +1607,7 @@ mod tests {
             presence_enabled: true,
             typing_enabled: true,
             memory_enabled: true,
+            agent_fields_enabled: true,
             model: None,
             effort_level: None,
             session_title: None,

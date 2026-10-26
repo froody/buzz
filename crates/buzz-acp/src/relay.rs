@@ -441,14 +441,17 @@ impl RestClient {
                     // Surface non-retriable statuses (401/403/500/…): callers
                     // often swallow the Err, and a silent auth failure here has
                     // previously masqueraded as "the agent just went quiet".
-                    tracing::warn!(
-                        "{method} {path} returned non-retriable HTTP {}",
-                        resp.status()
-                    );
+                    let status = resp.status();
+                    tracing::warn!("{method} {path} returned non-retriable HTTP {status}");
+                    let body: String = resp
+                        .text()
+                        .await
+                        .unwrap_or_default()
+                        .chars()
+                        .take(ERROR_BODY_MAX_CHARS)
+                        .collect();
                     return Err(RelayError::Http(format!(
-                        "{method} {} returned HTTP {}",
-                        path,
-                        resp.status()
+                        "{method} {path} returned HTTP {status}: {body}"
                     )));
                 }
                 Err(e) if e.is_timeout() || e.is_connect() => {
@@ -592,6 +595,9 @@ impl RestClient {
         serde_json::from_str(&text).map_err(|e| RelayError::Http(e.to_string()))
     }
 }
+
+/// Cap on the relay error body kept in a non-retriable [`RelayError::Http`].
+const ERROR_BODY_MAX_CHARS: usize = 512;
 
 /// Events the harness cares about.
 #[derive(Debug, Clone)]

@@ -933,6 +933,9 @@ pub struct PromptContext {
     /// Harness identity string for NIP-AM `harness` field. Derived from the
     /// configured `agent_command` at startup (e.g. `"goose"`, `"buzz-agent"`).
     pub harness_name: String,
+    /// NIP-AF reserved-field publisher. `None` when there is no owner or
+    /// `--no-agent-fields` / `BUZZ_ACP_NO_AGENT_FIELDS` is set.
+    pub agent_fields: Option<std::sync::Arc<crate::agent_fields::AgentFields>>,
     /// Relay URL this harness is connected to. Rides in observer payloads that
     /// the desktop keys per (agent, relay) pair, e.g. `session_config_captured`,
     /// mirroring the `managed_agent_runtime_lifecycle` frames.
@@ -5364,6 +5367,10 @@ async fn publish_agent_turn_metric(
 ) {
     use buzz_core::agent_turn_metric::AgentTurnMetricPayload;
     use nostr::{EventBuilder, Kind, Tag};
+
+    if let (Some(fields), Some(owner)) = (&ctx.agent_fields, ctx.agent_owner_pubkey) {
+        fields.publish(&ctx.rest_client, &ctx.agent_keys, owner, usage.as_ref());
+    }
 
     let (usage, owner_pk) = match (usage, ctx.agent_owner_pubkey.as_ref()) {
         (Some(u), Some(pk)) => (u, pk),
@@ -10093,6 +10100,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
         // owner_pubkey = None → early return, no panic.
         publish_agent_turn_metric(
@@ -10132,6 +10140,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
         // Will try to publish and fail (no real relay) but must not panic.
         publish_agent_turn_metric(
@@ -10172,6 +10181,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
         // Must not panic; HTTP submit will fail (no real relay) — that's fine.
         publish_agent_turn_metric(
@@ -10212,6 +10222,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
         // Will try to publish (encrypt succeeds) and fail HTTP (no relay) — must not panic.
         publish_agent_turn_metric(
@@ -10249,6 +10260,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
 
         let (turn, cumulative) = crate::pool::build_turn_metric_counts(&usage);
@@ -10301,6 +10313,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
 
         let (turn, cumulative) = crate::pool::build_turn_metric_counts(&usage);
@@ -10482,6 +10495,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             agent_owner_pubkey: owner_pubkey,
             memory_enabled: false,
             harness_name: "goose".to_string(),
+            agent_fields: None,
             relay_url: "ws://127.0.0.1:3000".to_string(),
         }
     }

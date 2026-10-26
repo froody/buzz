@@ -77,11 +77,9 @@ pub(crate) struct UsageUpdatePayload {
     /// Total tokens used (context-usage proxy). Optional — buzz-agent omits
     /// this field or sends 0 because it does not track a context window limit.
     #[serde(default)]
-    #[allow(dead_code)]
     pub used: u64,
     /// Context window size. Optional — buzz-agent omits this field.
     #[serde(default)]
-    #[allow(dead_code)]
     pub context_limit: u64,
     /// Session-cumulative inclusive input tokens.
     ///
@@ -242,6 +240,9 @@ pub struct TurnUsage {
     /// `None` when the publisher omitted it (unrecognised endpoint, mixed
     /// identities, old harness). Per-turn only — not session-cumulative.
     pub pricing_identity: Option<buzz_core::agent_turn_metric::PricingIdentity>,
+    /// Context window `(used, limit)` tokens from the latest `usage_update`;
+    /// `None` when the agent did not report a limit.
+    pub context_tokens: Option<(u64, u64)>,
 }
 
 /// Per-turn usage carried by a standard ACP `session/prompt` response.
@@ -392,6 +393,7 @@ impl StandardUsageTracker {
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         })
     }
 }
@@ -749,6 +751,8 @@ impl UsageTracker {
                 // The folded identity is written in take() — use a placeholder
                 // here and replace it before returning the record.
                 pricing_identity: None,
+                context_tokens: (payload.context_limit > 0)
+                    .then_some((payload.used, payload.context_limit)),
             });
         } else if self.in_flight_session.is_none() {
             // Not in-flight at all: advance the committed baseline so the next
@@ -1313,6 +1317,8 @@ mod tests {
         assert_eq!(usage.turn_output_tokens, Some(150));
         // seq increments once per publish, not once per notification.
         assert_eq!(usage.turn_seq, 2);
+        // Context comes from the latest notification's used/contextLimit.
+        assert_eq!(usage.context_tokens, Some((2250, 200_000)));
 
         // Turn 3 — prove seq continues to increment per publish, not per notification.
         tracker.begin_turn("sess-5");
@@ -1445,6 +1451,7 @@ mod tests {
         let t1 = tracker.take().expect("turn 1");
         assert!(!t1.delta_reliable, "first turn: unreliable");
         assert_eq!(t1.cumulative_input_tokens, Some(300));
+        assert_eq!(t1.context_tokens, None, "no contextLimit: no context");
 
         // Turn 2 — delta reliable.
         tracker.begin_turn("buzz-s1");
@@ -1989,6 +1996,7 @@ mod tests {
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
 
         let (turn_counts, cumulative_counts) = build_turn_metric_counts(&usage);
@@ -2030,6 +2038,7 @@ mod tests {
             cumulative_cache_write_tokens: None,
             model: None,
             pricing_identity: None,
+            context_tokens: None,
         };
 
         let (turn_counts, cumulative_counts) = build_turn_metric_counts(&usage);
