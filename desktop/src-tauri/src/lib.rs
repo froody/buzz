@@ -621,6 +621,8 @@ pub fn run() {
             sign_out,
             decrypt_observer_event,
             read_agent_fields,
+            read_agent_transcript_page,
+            read_agent_transcript_segment,
             build_observer_control_event,
             create_auth_event,
             nip44_encrypt_to_self,

@@ -454,7 +454,7 @@ const OBSERVER_BATCH_KIND = "batch";
 // envelope; a non-batch event passes through as a single-element array. A
 // malformed envelope (no events array) degrades to the envelope itself so a
 // harness bug cannot silently blank the session viewer.
-function unwrapObserverBatch(parsed: ObserverEvent): ObserverEvent[] {
+export function unwrapObserverBatch(parsed: ObserverEvent): ObserverEvent[] {
   if (parsed.kind !== OBSERVER_BATCH_KIND) {
     return [parsed];
   }

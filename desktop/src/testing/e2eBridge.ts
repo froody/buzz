@@ -226,6 +226,12 @@ type E2eConfig = {
     projectAccessChannelId?: string;
     /** Make remote project snapshots fail with this git-facing message. */
     projectRepoSnapshotError?: string;
+    /**
+     * NIP-AF transcript field returned for every agent: the manifest JSON and
+     * decoded blobs by sha256 (frame arrays for segments, manifests for
+     * pages). A sha256 missing from `blobs` fails like an unreadable blob.
+     */
+    agentTranscript?: { manifest: string; blobs: Record<string, unknown> };
     /** Delay remote repository snapshots so project loading UI is observable. */
     projectRepoSnapshotDelayMs?: number;
     /** Builderlab account returned by hosted-community onboarding. Null/omitted = signed out. */
@@ -12698,8 +12704,29 @@ export function maybeInstallE2eTauriMocks() {
           ),
         );
       }
-      case "read_agent_fields":
-        return [];
+      case "read_agent_fields": {
+        const transcript = activeConfig?.mock?.agentTranscript;
+        return transcript
+          ? [
+              {
+                key: "transcript",
+                value: transcript.manifest,
+                type: "transcript",
+                visibility: "owner",
+                createdAt: 1,
+              },
+            ]
+          : [];
+      }
+      case "read_agent_transcript_segment":
+      case "read_agent_transcript_page": {
+        const { sha256 } = payload as { sha256: string };
+        const blob = activeConfig?.mock?.agentTranscript?.blobs[sha256];
+        if (blob === undefined) {
+          throw new Error("relay returned 404");
+        }
+        return blob;
+      }
       case "decrypt_observer_event": {
         const event = JSON.parse(
           (payload as { eventJson: string }).eventJson,

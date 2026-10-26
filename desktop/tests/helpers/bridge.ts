@@ -148,6 +148,8 @@ type MockInstallRuntimeResult = {
 type MockBridgeOptions = {
   /** Tauri window label exposed to the app. Defaults to the main window. */
   windowLabel?: string;
+  /** NIP-AF transcript field and its decoded blobs by sha256. */
+  agentTranscript?: { manifest: string; blobs: Record<string, unknown> };
   ttsSettings?: {
     version: number;
     agentTextToSpeech: boolean;

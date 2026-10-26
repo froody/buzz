@@ -46,5 +46,6 @@ export function agentFieldRows(fields: AgentField[]) {
       label: RESERVED_LABELS[field.key] ?? field.key,
       value: formatValue(field),
       ownerOnly: field.visibility === "owner",
+      transcript: field.type === "transcript" ? field.value : null,
     }));
 }
