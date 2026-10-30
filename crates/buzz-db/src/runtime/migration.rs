@@ -770,7 +770,13 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 68);
+        assert_eq!(migrations.len(), 69);
+        for (index, migration) in migrations.iter().take(68).enumerate() {
+            assert_eq!(migration.version, (index + 1) as i64);
+        }
+        // 0069-0075 belong to a later base; 0076 keeps its upstream version so
+        // it never collides with them when they land.
+        assert_eq!(migrations[68].version, 76);
         assert_eq!(migrations[67].version, 68);
         assert!(migrations[67]
             .sql
@@ -788,6 +794,17 @@ mod postgres_tests {
         let desired_schema = crate::test_support::desired_state_schema_sql();
         assert!(!desired_schema.contains("events_refresh_channel_ttl"));
         assert!(!desired_schema.contains("refresh_channel_ttl_after_event_insert"));
+        let thread_policy_migration = strip_sql_comments(migrations[68].sql.as_str());
+        assert!(thread_policy_migration.contains("SET LOCAL lock_timeout = '5s'"));
+        assert!(thread_policy_migration
+            .contains("ADD COLUMN thread_policy TEXT NOT NULL DEFAULT 'nested'"));
+        assert!(!thread_policy_migration
+            .to_ascii_uppercase()
+            .contains("UPDATE "));
+        assert!(desired_schema.contains(
+            "thread_policy   TEXT NOT NULL DEFAULT 'nested' CHECK (thread_policy IN ('nested', 'flat'))"
+        ));
+
         assert_eq!(migrations[58].version, 59);
         assert!(migrations[58].sql.as_str().contains("buzz.push_enabled"));
         assert_eq!(migrations[59].version, 60);
@@ -2904,6 +2921,14 @@ mod postgres_tests {
                  migration and schema.sql must both use a representable shape."
             );
         }
+        // `communities` columns only: its additive ALTER migrations (0003,
+        // 0016, 0029, 0076) are mirrored inline in schema.sql.
+        assert_eq!(
+            columns(&desired, "communities").await,
+            columns(&migrated, "communities").await,
+            "column parity mismatch for communities: schema.sql desired state has drifted \
+             from the migrations; update schema/tables/public/communities.sql to match"
+        );
         assert_eq!(
             events_key_defs(&desired).await,
             events_key_defs(&migrated).await,

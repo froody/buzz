@@ -23,6 +23,7 @@ class HomePage extends HookConsumerWidget {
     this.communityInvitePageBuilder,
     this.mePageBuilder,
     this.communityAppearancePageBuilder,
+    this.communityThreadPolicyPageBuilder,
     required this.hasUnreadInbox,
     this.hasUnreadSolo = false,
     super.key,
@@ -39,6 +40,9 @@ class HomePage extends HookConsumerWidget {
 
   /// Builds the appearance destination opened from the community sheet.
   final WidgetBuilder? communityAppearancePageBuilder;
+
+  /// Builds the admin-only community thread policy page.
+  final WidgetBuilder? communityThreadPolicyPageBuilder;
   final bool hasUnreadInbox;
 
   /// Whether a visible Solo chat has unread activity.
@@ -119,6 +123,7 @@ class HomePage extends HookConsumerWidget {
         ),
         communityInvitePageBuilder: communityInvitePageBuilder,
         communityAppearancePageBuilder: communityAppearancePageBuilder,
+        communityThreadPolicyPageBuilder: communityThreadPolicyPageBuilder,
         tabReselection: homeReselection,
         onSettingsTransitionProgress: (progress) {
           if (settingsTransitionProgress.value != progress) {

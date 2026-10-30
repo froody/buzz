@@ -6,12 +6,16 @@ class _CommunityMenuSheet extends StatelessWidget {
     required this.onSwitchCommunity,
     this.invitePageBuilder,
     this.appearancePageBuilder,
+    this.threadPolicyPageBuilder,
   });
 
   final bool canInvite;
   final VoidCallback onSwitchCommunity;
   final WidgetBuilder? invitePageBuilder;
   final WidgetBuilder? appearancePageBuilder;
+
+  /// Admin-only; null hides the row.
+  final WidgetBuilder? threadPolicyPageBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +41,7 @@ class _CommunityMenuSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (appearancePageBuilder != null ||
+                threadPolicyPageBuilder != null ||
                 (canInvite && invitePageBuilder != null))
               AppListCard(
                 label: 'Community settings',
@@ -54,6 +59,13 @@ class _CommunityMenuSheet extends StatelessWidget {
                       title: 'Appearance',
                       trailing: const Icon(BuzzIcons.chevronRight, size: 18),
                       onTap: () => openPage(appearancePageBuilder!),
+                    ),
+                  if (threadPolicyPageBuilder != null)
+                    AppListRow(
+                      icon: BuzzIcons.cornerUpLeft,
+                      title: 'Thread replies',
+                      trailing: const Icon(BuzzIcons.chevronRight, size: 18),
+                      onTap: () => openPage(threadPolicyPageBuilder!),
                     ),
                 ],
               ),

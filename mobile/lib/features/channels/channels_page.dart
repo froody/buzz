@@ -113,6 +113,7 @@ class ChannelsPage extends HookConsumerWidget {
     this.hasUnreadInbox = false,
     this.communityInvitePageBuilder,
     this.communityAppearancePageBuilder,
+    this.communityThreadPolicyPageBuilder,
     required this.onSettingsTransitionProgress,
     this.tabReselection,
     super.key,
@@ -135,6 +136,9 @@ class ChannelsPage extends HookConsumerWidget {
   /// Builds the appearance destination opened from the community sheet.
   final WidgetBuilder? communityAppearancePageBuilder;
 
+  /// Builds the admin-only community thread policy page.
+  final WidgetBuilder? communityThreadPolicyPageBuilder;
+
   /// Reports Settings route progress so its foreground and Home's background
   /// render from the same timeline.
   final ValueChanged<double> onSettingsTransitionProgress;
@@ -145,7 +149,8 @@ class ChannelsPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Resolve permissions before the community menu is opened.
-    if (communityInvitePageBuilder != null) {
+    if (communityInvitePageBuilder != null ||
+        communityThreadPolicyPageBuilder != null) {
       ref.watch(currentCommunityRoleProvider);
     }
     final channelsAsync = ref.watch(channelsProvider);
@@ -431,6 +436,9 @@ class ChannelsPage extends HookConsumerWidget {
           onSwitchCommunity: openCommunityGrid,
           invitePageBuilder: communityInvitePageBuilder,
           appearancePageBuilder: communityAppearancePageBuilder,
+          threadPolicyPageBuilder: canManageCommunityInvites(role.value)
+              ? communityThreadPolicyPageBuilder
+              : null,
         ),
       );
     }

@@ -25,6 +25,7 @@ use runtime::{AgentRuntime, PoolStartup, SessionMode};
 mod scope;
 mod setup_mode;
 mod thread_follow;
+mod thread_policy;
 mod transcript;
 mod turn_phase;
 mod usage;
