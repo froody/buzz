@@ -109,6 +109,64 @@ impl std::fmt::Debug for KlipyConfig {
     }
 }
 
+/// Google sign-in settings for verifying gated members' work emails.
+#[derive(Clone)]
+pub struct ProfileVerifyConfig {
+    /// File the verify page appends `<pubkey hex> <email>` lines to.
+    /// `BUZZ_PROFILE_VERIFY_FILE`.
+    pub verified_file: std::path::PathBuf,
+    /// Google OAuth web client. `BUZZ_PROFILE_VERIFY_GOOGLE_CLIENT_ID`.
+    pub client_id: String,
+    /// `BUZZ_PROFILE_VERIFY_GOOGLE_CLIENT_SECRET`.
+    client_secret: String,
+    /// Workspace domain sign-ins must belong to, e.g. `neara.com`.
+    /// `BUZZ_PROFILE_VERIFY_DOMAIN`.
+    pub domain: String,
+    /// Base URL replacing Google's OAuth endpoints, for testing.
+    /// `BUZZ_PROFILE_VERIFY_GOOGLE_URL`.
+    pub google_url: Option<String>,
+}
+
+impl ProfileVerifyConfig {
+    fn from_env() -> Result<Option<Self>, ConfigError> {
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+        let Some(verified_file) = var("BUZZ_PROFILE_VERIFY_FILE") else {
+            return Ok(None);
+        };
+        let required = |name: &str| {
+            var(name).ok_or_else(|| {
+                ConfigError::InvalidValue(format!(
+                    "{name} is required with BUZZ_PROFILE_VERIFY_FILE"
+                ))
+            })
+        };
+        Ok(Some(Self {
+            verified_file: verified_file.into(),
+            client_id: required("BUZZ_PROFILE_VERIFY_GOOGLE_CLIENT_ID")?,
+            client_secret: required("BUZZ_PROFILE_VERIFY_GOOGLE_CLIENT_SECRET")?,
+            domain: required("BUZZ_PROFILE_VERIFY_DOMAIN")?.to_ascii_lowercase(),
+            google_url: var("BUZZ_PROFILE_VERIFY_GOOGLE_URL"),
+        }))
+    }
+
+    /// Return the secret only to the token exchange.
+    pub(crate) fn client_secret(&self) -> &str {
+        &self.client_secret
+    }
+}
+
+impl std::fmt::Debug for ProfileVerifyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProfileVerifyConfig")
+            .field("verified_file", &self.verified_file)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"[REDACTED]")
+            .field("domain", &self.domain)
+            .field("google_url", &self.google_url)
+            .finish()
+    }
+}
+
 /// Maximum configured jitter, leaving ten seconds of the hard-drain budget for
 /// WebSocket close-frame delivery after the final delayed cancellation.
 pub const MAX_DRAIN_JITTER_MS: u64 = 20_000;
@@ -305,6 +363,15 @@ pub struct Config {
     ///
     /// Default: `false`. Set via `BUZZ_ALLOW_NIP_OA_AUTH=true`.
     pub allow_nip_oa_auth: bool,
+
+    /// File of pubkeys whose messages require a complete profile description
+    /// (see [`crate::handlers::profile_gate`]). Unset disables the gate.
+    /// Set via `BUZZ_PROFILE_GATE_FILE`.
+    pub profile_gate_file: Option<std::path::PathBuf>,
+
+    /// Email verification for the profile gate (see
+    /// [`crate::api::profile_verify`]). Unset keeps the email + Slack link check.
+    pub profile_verify: Option<ProfileVerifyConfig>,
 
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
@@ -809,6 +876,11 @@ impl Config {
         let allow_nip_oa_auth = std::env::var("BUZZ_ALLOW_NIP_OA_AUTH")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+
+        let profile_gate_file = std::env::var_os("BUZZ_PROFILE_GATE_FILE")
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from);
+        let profile_verify = ProfileVerifyConfig::from_env()?;
 
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
@@ -1435,6 +1507,8 @@ impl Config {
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
             allow_nip_oa_auth,
+            profile_gate_file,
+            profile_verify,
             klipy,
             media,
             media_max_concurrent_uploads,

@@ -875,6 +875,8 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         relay_keypair,
         media_storage,
     );
+    app_state.profile_gate =
+        buzz_relay::handlers::profile_gate::ProfileGate::from_config(&config).map(Arc::new);
     // NIP-FI S4: construct deny map + command verifier from startup config,
     // before Arc::new so we can mutate app_state directly. The installer does
     // no JWKS I/O; the warm + refresh block below is the single key lifecycle

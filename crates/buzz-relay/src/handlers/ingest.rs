@@ -2638,6 +2638,7 @@ async fn ingest_event_inner(
     // Ban / timeout write-block. Runs before every kind-specific branch below
     // (commands, feedback, reports, moderation) so no write returns ahead of it.
     enforce_write_restriction(state, tenant, kind_u32, auth.pubkey()).await?;
+    super::profile_gate::enforce_profile_gate(state, tenant, kind_u32, auth.pubkey()).await?;
 
     // Command kinds are routed AFTER signature verification, timestamp check,
     // pubkey/auth match, and scope validation — never before.

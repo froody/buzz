@@ -70,6 +70,20 @@ pub enum ModerationNotice {
         /// (indefinite) — rendered as "until <RFC3339>" in the timeout body.
         timeout_until: Option<chrono::DateTime<chrono::Utc>>,
     },
+    /// To a gated author: posting is blocked until their profile is complete.
+    ProfileIncomplete {
+        /// Fresh id per notice; there is no source row.
+        notice_id: Uuid,
+    },
+    /// To a gated author: their profile has no email they have verified.
+    EmailUnverified {
+        /// Fresh id per notice; there is no source row.
+        notice_id: Uuid,
+        /// The Workspace email domain, e.g. `neara.com`.
+        domain: String,
+        /// The relay's verify page.
+        verify_url: String,
+    },
 }
 
 /// Deliver a moderation notice to `recipient` in this community's
@@ -226,6 +240,8 @@ impl ModerationNotice {
             ModerationNotice::ReportResolved { report_id, .. } => *report_id,
             ModerationNotice::ContentActioned { action_id, .. } => *action_id,
             ModerationNotice::Restriction { action_id, .. } => *action_id,
+            ModerationNotice::ProfileIncomplete { notice_id }
+            | ModerationNotice::EmailUnverified { notice_id, .. } => *notice_id,
         }
     }
 
@@ -278,6 +294,24 @@ impl ModerationNotice {
                 };
                 format!("{action} {community}{terms}.\n\nReason: {public_reason}")
             }
+            ModerationNotice::ProfileIncomplete { .. } => format!(
+                "Before you can post in {community}, add your email address and your Slack \
+                 profile link to your profile description.\n\n\
+                 Open Settings → Profile, edit Profile description, and include both, for \
+                 example:\n\
+                 tom@neara.com https://linesoft-plp.slack.com/team/U01CX2R3FQV\n\n\
+                 To find your Slack link: in Slack, click your profile picture → Profile → \
+                 ⋮ → Copy link to profile. You can post as soon as you save."
+            ),
+            ModerationNotice::EmailUnverified {
+                domain, verify_url, ..
+            } => format!(
+                "Before you can post in {community}, verify your @{domain} email address.\n\n\
+                 1. Open {verify_url} and sign in with your @{domain} Google account.\n\
+                 2. Follow the steps there to link your Buzz key.\n\
+                 3. Put your email address in your profile description (Settings → Profile).\n\n\
+                 You can post as soon as all three are done."
+            ),
         }
     }
 }

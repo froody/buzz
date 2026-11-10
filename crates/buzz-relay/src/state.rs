@@ -1319,6 +1319,9 @@ pub struct AppState {
     /// first-write-wins and set during auth before an agent's first event,
     /// so a short TTL only bounds staleness for the rare backfill race.
     pub author_type_cache: Arc<moka::sync::Cache<(CommunityId, Vec<u8>), bool>>,
+    /// Opt-in profile gate, present when `BUZZ_PROFILE_GATE_FILE` is set.
+    /// Installed at startup by [`crate::handlers::profile_gate::ProfileGate::from_config`].
+    pub profile_gate: Option<Arc<crate::handlers::profile_gate::ProfileGate>>,
     /// Ephemeral-path cache of `is_serving_active` (community not archived or
     /// deleted). Key: community. TTL only (10s). Persistent ingest keeps the
     /// uncached read as its durable write fence; on the ephemeral path archive
@@ -1590,6 +1593,7 @@ impl AppState {
                     .time_to_live(std::time::Duration::from_secs(300))
                     .build(),
             ),
+            profile_gate: None,
             serving_active_cache: Arc::new(
                 moka::sync::Cache::builder()
                     .max_capacity(10_000)

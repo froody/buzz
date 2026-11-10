@@ -430,7 +430,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(media_router)
         .merge(git_router)
         .merge(git_policy_router);
-    for optional in [accessory_router, admin_router].into_iter().flatten() {
+    let profile_verify_router = state
+        .config
+        .profile_verify
+        .is_some()
+        .then(|| api::profile_verify::router(state.clone()));
+    for optional in [accessory_router, admin_router, profile_verify_router]
+        .into_iter()
+        .flatten()
+    {
         merged = merged.merge(optional);
     }
 
