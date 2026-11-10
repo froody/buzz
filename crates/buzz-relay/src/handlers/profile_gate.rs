@@ -28,9 +28,9 @@ use super::ingest::IngestError;
 use super::moderation_notices::{send_moderation_notice, ModerationNotice};
 use crate::state::AppState;
 
-/// Rejection returned to a gated author whose profile is incomplete.
-const PROFILE_INCOMPLETE: &str = "restricted: add your email address and Slack profile link \
-     to your profile description (Settings → Profile) before posting";
+/// Rejection returned to a gated author. Apps show it in a send-failure toast
+/// that can't hold a clickable link, so the DM carries the instructions.
+const CHECK_DM: &str = "restricted: Check your DM for instructions";
 
 /// How often a gated author is sent the explanatory DM.
 const NOTICE_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -246,31 +246,16 @@ pub(crate) async fn enforce_profile_gate(
         .map_err(|e| IngestError::Internal(format!("error: internal error reading profile: {e}")))?
         .and_then(|user| user.about)
         .unwrap_or_default();
-    let (notice, message) = match &gate.verification {
+    let notice_id = uuid::Uuid::new_v4();
+    let notice = match &gate.verification {
         None if profile_complete(&about) => return Ok(()),
-        None => (
-            ModerationNotice::ProfileIncomplete {
-                notice_id: uuid::Uuid::new_v4(),
-            },
-            PROFILE_INCOMPLETE.to_string(),
-        ),
+        None => ModerationNotice::ProfileIncomplete { notice_id },
         Some(verification) if verification.verifies(&key, &about) => return Ok(()),
-        Some(verification) => {
-            let verify_url = crate::api::profile_verify::page_url(tenant.host());
-            let message = format!(
-                "restricted: verify your @{} email before posting: open {verify_url}, then add \
-                 the email to your profile description (Settings → Profile)",
-                verification.domain
-            );
-            (
-                ModerationNotice::EmailUnverified {
-                    notice_id: uuid::Uuid::new_v4(),
-                    domain: verification.domain.clone(),
-                    verify_url,
-                },
-                message,
-            )
-        }
+        Some(verification) => ModerationNotice::EmailUnverified {
+            notice_id,
+            domain: verification.domain.clone(),
+            verify_url: crate::api::profile_verify::page_url(tenant.host()),
+        },
     };
     let notice_key = (tenant.community(), key);
     if !gate.notified.contains_key(&notice_key) {
@@ -287,7 +272,7 @@ pub(crate) async fn enforce_profile_gate(
             }
         });
     }
-    Err(IngestError::AuthFailed(message))
+    Err(IngestError::AuthFailed(CHECK_DM.into()))
 }
 
 #[cfg(test)]
