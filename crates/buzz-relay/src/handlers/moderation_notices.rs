@@ -306,11 +306,15 @@ impl ModerationNotice {
             ModerationNotice::EmailUnverified {
                 domain, verify_url, ..
             } => format!(
-                "Before you can post in {community}, verify your @{domain} email address.\n\n\
-                 1. Open {verify_url} and sign in with your @{domain} Google account.\n\
-                 2. Follow the steps there to link your Buzz key.\n\
-                 3. Put your email address in your profile description (Settings → Profile).\n\n\
-                 You can post as soon as all three are done."
+                "Before you can post in {community}, verify your @{domain} email address. \
+                 Open {verify_url} and do all four steps:\n\n\
+                 1. Sign in with your @{domain} Google account.\n\
+                 2. Enter your Buzz public key, then add the buzz-verify-… code it shows to \
+                 your profile description (Settings → Profile) and save.\n\
+                 3. Press Check on the page.\n\
+                 4. Replace the code in your profile description with your @{domain} email \
+                 address and save.\n\n\
+                 You can post as soon as step 4 is done. Pressing Check is not the last step."
             ),
         }
     }

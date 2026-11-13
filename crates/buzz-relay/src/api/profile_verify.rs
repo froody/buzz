@@ -149,7 +149,7 @@ body{{font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:3rem auto;paddin
 h1{{font-size:1.4rem}} code{{background:#eff1f5;padding:.1rem .3rem;border-radius:4px;user-select:all}}
 input{{font:inherit;width:100%;padding:.5rem;box-sizing:border-box;margin:.25rem 0 1rem}}
 button,.button{{font:inherit;padding:.5rem 1rem;border-radius:6px;border:0;background:#1e66f5;color:#fff;text-decoration:none;cursor:pointer}}
-.error{{color:#d20f39}} .ok{{color:#40a02b}}
+.error{{color:#d20f39}} .ok{{color:#40a02b}} li{{margin:.4rem 0}} li.done{{color:#9ca0b0}} li.current{{font-weight:600}}
 </style></head><body><h1>Verify your email for {community}</h1>{body}</body></html>"#,
         community = escape(community),
     ))
@@ -171,6 +171,38 @@ fn key_form(error: &str, npub: &str) -> String {
     )
 }
 
+/// The whole flow, shown on every page so that pressing Check doesn't look
+/// like the end: the gate still needs the email in the profile (step 4).
+fn steps(domain: &str, current: usize, email: Option<&str>, code: Option<&str>) -> String {
+    let email = email.map_or_else(|| format!("you@{domain}"), escape);
+    let code = code.unwrap_or("buzz-verify-…");
+    let items = [
+        format!("Sign in with your @{domain} Google account."),
+        format!(
+            "Enter your Buzz public key, then add <code>{code}</code> to your profile \
+             description in Buzz (Settings → Profile) and save."
+        ),
+        "Press Check on this page.".to_string(),
+        format!(
+            "Replace the code in your profile description with <code>{email}</code> and \
+             save. You can post after this step."
+        ),
+    ];
+    let items: String = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let class = match (i + 1).cmp(&current) {
+                std::cmp::Ordering::Less => "done",
+                std::cmp::Ordering::Equal => "current",
+                std::cmp::Ordering::Greater => "todo",
+            };
+            format!(r#"<li class="{class}">{item}</li>"#)
+        })
+        .collect();
+    format!("<ol>{items}</ol>")
+}
+
 async fn page(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let tenant = match tenant(&state, &headers).await {
         Ok(tenant) => tenant,
@@ -179,12 +211,14 @@ async fn page(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
     let domain = &verify_config(&state).domain;
     let body = match session_email(&headers) {
         None => format!(
-            r#"<p>Before you can post, link your Buzz key to your @{domain} account.</p>
-<p><a class="button" href="/verify/login">Sign in with Google</a></p>"#
+            r#"<p>Before you can post, link your Buzz key to your @{domain} account. There are four steps:</p>
+{}<p><a class="button" href="/verify/login">Sign in with Google</a></p>"#,
+            steps(domain, 1, None, None)
         ),
         Some(email) => format!(
-            r#"<p>Signed in as <b>{}</b>.</p>{}"#,
+            r#"<p>Signed in as <b>{}</b>.</p>{}{}"#,
             escape(&email),
+            steps(domain, 2, Some(&email), None),
             key_form("", "")
         ),
     };
@@ -351,11 +385,14 @@ async fn key_or_check(
     let Some(email) = session_email(&headers) else {
         return Redirect::to(PAGE).into_response();
     };
+    let domain = &verify_config(&state).domain;
     let signed_in = format!("<p>Signed in as <b>{}</b>.</p>", escape(&email));
     let Ok(pubkey) = nostr::PublicKey::parse(form.npub.trim()) else {
         return render(
             tenant.host(),
-            &(signed_in + &key_form("That isn't a Buzz public key.", &form.npub)),
+            &(signed_in
+                + &steps(domain, 2, Some(&email), None)
+                + &key_form("That isn't a Buzz public key.", &form.npub)),
         );
     };
     let npub = nostr::ToBech32::to_bech32(&pubkey).unwrap_or_else(|_| pubkey.to_hex());
@@ -382,10 +419,10 @@ async fn key_or_check(
                 Ok(()) => render(
                     tenant.host(),
                     &format!(
-                        r#"{signed_in}<p class="ok"><b>Verified.</b> Your Buzz key is linked to {email}.</p>
-<p>Last step: in Buzz, open Settings → Profile and replace <code>{code}</code> in your
-profile description with <code>{email}</code>. You can post once you save.</p>"#,
-                        email = escape(&email)
+                        r#"{signed_in}<p class="ok">Your Buzz key is linked to {}.</p>
+<p><b>You're not done yet:</b> you can't post until you finish step 4.</p>{}"#,
+                        escape(&email),
+                        steps(domain, 4, Some(&email), Some(&code))
                     ),
                 ),
                 Err(e) => {
@@ -403,13 +440,11 @@ profile description with <code>{email}</code>. You can post once you save.</p>"#
     render(
         tenant.host(),
         &format!(
-            r#"{signed_in}<p>Key: <code>{npub}</code></p>{notice}
-<ol><li>In Buzz, open Settings → Profile.</li>
-<li>Add this code to your <b>Profile description</b> and save: <code>{code}</code></li>
-<li>Come back and press Check.</li></ol>
+            r#"{signed_in}<p>Key: <code>{npub}</code></p>{notice}{}
 <form method="post" action="/verify/check"><input type="hidden" name="npub" value="{npub}">
 <button>Check</button></form>
-<p><small>The code proves you hold this key: only your Buzz app can change your profile.</small></p>"#
+<p><small>The code proves you hold this key: only your Buzz app can change your profile.</small></p>"#,
+            steps(domain, 2, Some(&email), Some(&code))
         ),
     )
 }
